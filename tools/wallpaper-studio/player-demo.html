@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Background Player</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0d0d14;
+      font-family: system-ui, sans-serif;
+      color: #e0e0e0;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      font-weight: 300;
+      letter-spacing: 2px;
+    }
+
+    #bg-container {
+      width: 100vw;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: -1;
+    }
+
+    #bg-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-zone {
+      padding: 40px;
+      border: 2px dashed #4ecdc4;
+      border-radius: 12px;
+      text-align: center;
+      background: rgba(26, 26, 46, 0.8);
+      transition: all 0.3s;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      background: rgba(78, 205, 196, 0.1);
+      border-color: #45b7d1;
+    }
+
+    .drop-zone p {
+      margin: 10px 0;
+      font-size: 0.9rem;
+      color: #888;
+    }
+
+    .drop-zone input {
+      display: none;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #4ecdc4, #45b7d1);
+      color: #0d0d14;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      margin-top: 10px;
+    }
+
+    .controls {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(18, 18, 28, 0.9);
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #2a2a4a;
+    }
+
+    .controls label {
+      display: block;
+      font-size: 0.75rem;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .controls input[type="range"] {
+      width: 150px;
+    }
+  </style>
+</head>
+<body>
+  <div id="bg-container">
+    <canvas id="bg-canvas"></canvas>
+  </div>
+
+  <div class="drop-zone" id="drop-zone">
+    <h2>Load Interactive Background</h2>
+    <p>Drag & drop or click to select</p>
+    <input type="file" id="file-input" accept="image/png,image/webp,image/bmp,image/jpeg,image/svg+xml">
+    <label class="btn" for="file-input">Choose File</label>
+  </div>
+
+  <div class="controls">
+    <label>Click anywhere to create particle bursts</label>
+  </div>
+
+  <script src="core-engine.js"></script>
+  <script src="player.js"></script>
+  <script>
+    const player = new InteractivePlayer.Player('bg-canvas');
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) await loadFile(file);
+    });
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (file) await loadFile(file);
+    });
+
+    async function loadFile(file) {
+      console.log('Loading:', file.name, file.type);
+      const data = await player.loadFromFile(file);
+      
+      if (data) {
+        player.start(data.c || {});
+        dropZone.style.display = 'none';
+        document.querySelector('.controls').style.display = 'block';
+      } else {
+        alert('No interactive data found - loading as static image');
+      }
+    }
+
+    window.addEventListener('interactiveBGLoaded', (e) => {
+      console.log('Interactive BG Event:', e.detail);
+    });
+  </script>
+</body>
+</html>
