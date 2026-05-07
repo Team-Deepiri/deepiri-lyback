@@ -1,0 +1,28 @@
+{
+  "name": "deepiri-livegrounds",
+  "version": "1.0.0",
+  "description": "Revolutionary interactive backgrounds that run everywhere",
+  "main": "src/interactive-background/core-engine.js",
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve tools/wallpaper-studio",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "interactive",
+    "background",
+    "wallpaper",
+    "particles",
+    "canvas"
+  ],
+  "author": "Deepiri",
+  "license": "MIT",
+  "homepage": "https://github.com/deepiri/livegrounds#readme",
+  "bugs": {
+    "url": "https://github.com/deepiri/livegrounds/issues"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "serve": "^14.2.0"
+  }
+}
