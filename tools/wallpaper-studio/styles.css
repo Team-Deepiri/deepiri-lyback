@@ -1,0 +1,54 @@
+/* Deepiri Livegrounds Studio Styles */
+
+:root {
+  --primary-color: #4ecdc4;
+  --secondary-color: #45b7d1;
+  --bg-dark: #0d0d14;
+  --bg-panel: #12121c;
+  --border-color: #2a2a4a;
+  --text-primary: #e0e0e0;
+  --text-secondary: #888;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 280px;
+  background: var(--bg-panel);
+  padding: 20px;
+  border-right: 1px solid var(--border-color);
+}
+
+.main-content {
+  flex: 1;
+  padding: 20px;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+button.primary {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: var(--bg-dark);
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
