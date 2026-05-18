@@ -36,9 +36,9 @@ Uses least-privilege permissions. `security-events: write` is required so CodeQL
 ### Language setup (current)
 ```yaml
 with:
-  languages: javascript
+  languages: javascript-typescript
 ```
-This workflow currently runs analysis for JavaScript.
+This workflow currently runs analysis for JavaScript and TypeScript.
 
 ### Checkout step
 ```yaml
@@ -62,22 +62,6 @@ uses: github/codeql-action/analyze@v3
 Executes queries and uploads results to GitHub Security.
 
 ## Config breakdown (`.github/codeql/codeql-config.yml`)
-
-### `name`
-The current config name is:
-
-```yaml
-name: deepiri-livegrounds-codeql
-```
-
-### `paths`
-The current include list is intentionally scoped to the primary source directories:
-
-```yaml
-paths:
-  - src
-  - tools
-```
 
 ### `paths-ignore`
 Generated/build/runtime artifact paths are excluded to reduce noise and runtime:
@@ -111,25 +95,14 @@ paths-ignore:
 Keeping this updated as code and language coverage evolve is important. Here are common maintenance changes.
 
 ### Keep language scope aligned with this repository
-This workflow currently analyzes JavaScript only:
+This workflow currently analyzes JavaScript and TypeScript only:
 
 ```yaml
 with:
-  languages: javascript
+  languages: javascript-typescript
 ```
 
 Only change this value when this repository adds production code in another supported language.
-
-### Include only specific top-level packages
-Add explicit `paths` only for directories that exist in this checkout.
-
-Example:
-
-```yaml
-paths:
-  - src
-  - tools
-```
 
 ### Exclude another generated folder
 Add a glob to `paths-ignore`, for example:
