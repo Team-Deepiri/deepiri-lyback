@@ -27,43 +27,17 @@ const InteractiveEncoder = (() => {
 
     const encoder = new TextEncoder();
     const magicBytes = encoder.encode(MAGIC);
-    const lengthBytes = new Uint8Array([0, 0, 0, payload.length]);
     const payloadBytes = encoder.encode(payload);
-    const crcData = new Uint8Array(magicBytes.length + lengthBytes.length + payloadBytes.length);
+    const len = payloadBytes.length;
 
-    let crc = 0xFFFFFFFF;
-    for (let i = 0; i < crcData.length; i++) {
-      if (i < magicBytes.length) crcData[i] = magicBytes[i];
-      else if (i < magicBytes.length + lengthBytes.length) crcData[i] = lengthBytes[i - magicBytes.length];
-      else crcData[i] = payloadBytes[i - magicBytes.length - lengthBytes.length];
-    }
-
-    const crc32Table = [];
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) {
-        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      }
-      crc32Table[n] = c;
-    }
-    for (let i = 0; i < crcData.length; i++) {
-      crc = crc32Table[(crc ^ crcData[i]) & 0xFF] ^ (crc >>> 8);
-    }
-    crc = (crc ^ 0xFFFFFFFF) >>> 0;
-
-    const crcBytes = new Uint8Array([
-      (crc >> 24) & 0xFF,
-      (crc >> 16) & 0xFF,
-      (crc >> 8) & 0xFF,
-      crc & 0xFF
-    ]);
-
-    const chunk = new Uint8Array(4 + 4 + magicBytes.length + lengthBytes.length + payloadBytes.length + 4);
+    const chunk = new Uint8Array(4 + 4 + len);
     let offset = 0;
-    chunk.set(lengthBytes, offset); offset += 4;
     chunk.set(magicBytes, offset); offset += 4;
-    chunk.set(payloadBytes, offset); offset += payloadBytes.length;
-    chunk.set(crcBytes, offset);
+    chunk[offset++] = (len >> 24) & 0xFF;
+    chunk[offset++] = (len >> 16) & 0xFF;
+    chunk[offset++] = (len >> 8) & 0xFF;
+    chunk[offset++] = len & 0xFF;
+    chunk.set(payloadBytes, offset);
 
     const result = new Uint8Array(bytes.length + chunk.length);
     result.set(bytes, 0);
@@ -137,29 +111,41 @@ const InteractiveEncoder = (() => {
 
       const payload = encodePayload(engineCode, config);
       const payloadBytes = new TextEncoder().encode(payload);
-      const payloadOffset = 54 + pixelDataSize;
-
-      for (let i = 0; i < payloadBytes.length && (payloadOffset + i) < fileSize + payloadBytes.length; i++) {
-        view.setUint8(payloadOffset + i, payloadBytes[i]);
-      }
-
-      view.setUint8(payloadOffset + payloadBytes.length, 0x49);
-      view.setUint8(payloadOffset + payloadBytes.length + 1, 0x42);
-      view.setUint8(payloadOffset + payloadBytes.length + 2, 0x47);
-      view.setUint8(payloadOffset + payloadBytes.length + 3, 0x31);
+      const totalSize = fileSize + payloadBytes.length + 4;
+      const resultBuffer = new ArrayBuffer(totalSize);
+      const resultView = new DataView(resultBuffer);
+      resultView.setUint8(0, 0x42);
+      resultView.setUint8(1, 0x4D);
+      resultView.setUint32(2, totalSize, true);
+      resultView.setUint32(10, 54, true);
+      resultView.setUint32(14, 40, true);
+      resultView.setInt32(18, canvas.width, true);
+      resultView.setInt32(22, -canvas.height, true);
+      resultView.setUint16(26, 1, true);
+      resultView.setUint16(28, 24, true);
+      resultView.setUint32(30, pixelDataSize, true);
 
       let offset = 54;
       for (let y = 0; y < canvas.height; y++) {
         for (let x = 0; x < canvas.width; x++) {
           const i = (y * canvas.width + x) * 4;
-          view.setUint8(offset++, data[i + 2]);
-          view.setUint8(offset++, data[i + 1]);
-          view.setUint8(offset++, data[i]);
+          resultView.setUint8(offset++, data[i + 2]);
+          resultView.setUint8(offset++, data[i + 1]);
+          resultView.setUint8(offset++, data[i]);
         }
         while (offset % 4 !== 54 % 4 && offset < 54 + pixelDataSize) offset++;
       }
 
-      resolve(new Blob([buffer], { type: 'image/bmp' }));
+      const payloadOffset = offset;
+      for (let i = 0; i < payloadBytes.length; i++) {
+        resultView.setUint8(payloadOffset + i, payloadBytes[i]);
+      }
+      resultView.setUint8(payloadOffset + payloadBytes.length, 0x49);
+      resultView.setUint8(payloadOffset + payloadBytes.length + 1, 0x42);
+      resultView.setUint8(payloadOffset + payloadBytes.length + 2, 0x47);
+      resultView.setUint8(payloadOffset + payloadBytes.length + 3, 0x31);
+
+      resolve(new Blob([resultBuffer], { type: 'image/bmp' }));
     });
   }
 
