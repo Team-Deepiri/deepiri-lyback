@@ -1,8 +1,9 @@
 const InteractiveEngine = (() => {
+  const DEFAULTS = (typeof DEEPIRI_DEFAULTS !== 'undefined') ? DEEPIRI_DEFAULTS : {};
   const CONFIG = {
-    TARGET_FPS: 30,
-    MAX_PARTICLES: 200,
-    COLORS: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
+    TARGET_FPS: DEFAULTS.TARGET_FPS || 30,
+    MAX_PARTICLES: DEFAULTS.MAX_PARTICLES || 200,
+    COLORS: DEFAULTS.DEFAULT_COLORS || ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
   };
 
   class Particle {
@@ -14,9 +15,11 @@ const InteractiveEngine = (() => {
     reset(x, y) {
       this.x = x ?? Math.random() * this.canvas.width;
       this.y = y ?? Math.random() * this.canvas.height;
-      this.vx = (Math.random() - 0.5) * 3;
-      this.vy = (Math.random() - 0.5) * 3;
-      this.size = Math.random() * 8 + 4;
+      const speed = DEFAULTS.DEFAULT_SPEED || 3;
+      this.vx = (Math.random() - 0.5) * speed;
+      this.vy = (Math.random() - 0.5) * speed;
+      const baseSize = DEFAULTS.DEFAULT_PARTICLE_SIZE || 6;
+      this.size = Math.random() * baseSize + baseSize / 2;
       this.color = CONFIG.COLORS[Math.floor(Math.random() * CONFIG.COLORS.length)];
       this.life = 1;
       this.decay = Math.random() * 0.01 + 0.005;
@@ -109,24 +112,26 @@ const InteractiveEngine = (() => {
     }
 
     spawnBurst(x, y) {
-      for (let i = 0; i < 20; i++) {
+      const count = DEFAULTS.CLICK_BURST_COUNT || 20;
+      for (let i = 0; i < count; i++) {
         const p = new Particle(x, y, this.canvas);
         p.vx = (Math.random() - 0.5) * 10;
         p.vy = (Math.random() - 0.5) * 10;
         this.particles.push(p);
       }
       if (this.particles.length > CONFIG.MAX_PARTICLES * 2) {
-        this.particles.splice(0, 20);
+        this.particles.splice(0, count);
       }
     }
 
     update() {
+      const interactionRadius = DEFAULTS.MOUSE_INTERACTION_RADIUS || 100;
       for (const p of this.particles) {
         const dx = p.x - this.mouseX;
         const dy = p.y - this.mouseY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 100 && dist > 0) {
-          const force = (100 - dist) / 100;
+        if (dist < interactionRadius && dist > 0) {
+          const force = (interactionRadius - dist) / interactionRadius;
           p.vx += (dx / dist) * force * 0.5;
           p.vy += (dy / dist) * force * 0.5;
         }
@@ -135,7 +140,7 @@ const InteractiveEngine = (() => {
     }
 
     draw() {
-      this.ctx.fillStyle = '#1a1a2e';
+      this.ctx.fillStyle = DEFAULTS.DEFAULT_BG_COLOR || '#1a1a2e';
       this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
       this.drawGrid();
@@ -150,7 +155,7 @@ const InteractiveEngine = (() => {
     drawGrid() {
       this.ctx.strokeStyle = 'rgba(255,255,255,0.03)';
       this.ctx.lineWidth = 1;
-      const gridSize = 50;
+      const gridSize = DEFAULTS.GRID_SIZE || 50;
       for (let x = 0; x < this.canvas.width; x += gridSize) {
         this.ctx.beginPath();
         this.ctx.moveTo(x, 0);

@@ -30,7 +30,6 @@ const InteractivePlayer = (() => {
       const endIdx = this.findBytes(bytes, endMarker);
       if (endIdx === -1) return this.loadImageFallback(new Blob([bytes]));
 
-      const magicBytes = new TextEncoder().encode(MAGIC);
       const searchStart = endIdx + 8;
 
       for (let i = searchStart; i < bytes.length - 20; i++) {
@@ -68,34 +67,20 @@ const InteractivePlayer = (() => {
     loadFromBMP(bytes) {
       const view = new DataView(bytes.buffer);
       const dataOffset = view.getUint32(10, true);
-      const payloadOffset = dataOffset + 4;
+      const width = view.getInt32(18, true);
+      const height = Math.abs(view.getInt32(22, true));
+      const rowSize = Math.floor((width * 24 + 31) / 32) * 4;
+      const pixelDataSize = rowSize * height;
 
-      const magicBytes = new TextEncoder().encode(MAGIC);
-      let payloadStart = -1;
-
-      for (let i = payloadOffset; i < bytes.length - 4; i++) {
+      for (let i = dataOffset + pixelDataSize; i < bytes.length - 4; i++) {
         if (bytes[i] === 73 && bytes[i + 1] === 66 && bytes[i + 2] === 71 && bytes[i + 3] === 49) {
-          payloadStart = i - 4;
-          break;
+          const payloadBytes = bytes.slice(dataOffset + pixelDataSize, i);
+          const payload = new TextDecoder().decode(payloadBytes);
+          return this.initFromPayload(payload);
         }
       }
 
-      if (payloadStart === -1) {
-        return this.loadImageFallback(new Blob([bytes], { type: 'image/bmp' }));
-      }
-
-      const metaIdx = payloadStart + 8;
-      let endIdx = metaIdx;
-      for (let i = metaIdx; i < bytes.length - 4; i++) {
-        if (bytes[i] === 73 && bytes[i + 1] === 66 && bytes[i + 2] === 71 && bytes[i + 3] === 49) {
-          endIdx = i;
-          break;
-        }
-      }
-
-      const payloadBytes = bytes.slice(metaIdx, endIdx);
-      const payload = new TextDecoder().decode(payloadBytes);
-      return this.initFromPayload(payload);
+      return this.loadImageFallback(new Blob([bytes], { type: 'image/bmp' }));
     }
 
     loadFromJPG(bytes) {

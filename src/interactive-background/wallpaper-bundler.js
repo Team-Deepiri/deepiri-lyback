@@ -1,25 +1,4 @@
 const WallpaperBundler = (() => {
-  const WALLPAPER_TYPES = {
-    windows: {
-      ext: '.wallpaper',
-      mime: 'application/x-deepiri-wallpaper',
-      create: createWindowsWallpaper,
-      extract: extractWindowsWallpaper
-    },
-    theme: {
-      ext: '.theme',
-      mime: 'text/x-windows-theme',
-      create: createWindowsTheme,
-      extract: null
-    },
-    zip: {
-      ext: '.zip',
-      mime: 'application/zip',
-      create: createZipBundle,
-      extract: extractZipBundle
-    }
-  };
-
   function createWindowsWallpaper(canvas, config, engineCode) {
     const wallpaper = {
       version: '1.0',
@@ -45,10 +24,7 @@ const WallpaperBundler = (() => {
     return new Blob([result], { type: 'application/x-deepiri-wallpaper' });
   }
 
-  function createWindowsTheme(canvas, config, engineCode) {
-    const htmlContent = generateWallpaperHTML(config);
-    const preview = canvas.toDataURL('image/png', 0.7);
-
+  function createWindowsTheme(_canvas, _config, _engineCode) {
     const themeContent = `[Theme]
 DisplayName=Deepiri Interactive Wallpaper
 [Slideshow]
@@ -125,7 +101,7 @@ let p=[],mx=0,my=0,w,h;function rz(){w=canvas.width=window.innerWidth,h=canvas.h
     return code.replace(/\s+/g, ' ').replace(/; /g, ';').replace(/} /g, '}').replace(/ {/g, '{');
   }
 
-  function getReadmeContent(config) {
+  function getReadmeContent(_config) {
     return `DEEPIRI INTERACTIVE WALLPAPER
 ===============================
 Created: ${new Date().toISOString().split('T')[0]}
@@ -145,78 +121,108 @@ https://github.com/deepiri/livegrounds
   }
 
   function createManualZip(files) {
-    const parts = [];
     const encoder = new TextEncoder();
+    const localEntries = [];
+    const centralEntries = [];
+    let localOffset = 0;
 
     for (const file of files) {
-      const name = file.name;
-      let content;
+      let contentBytes;
       if (file.base64) {
         const binary = atob(file.content);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        content = bytes;
+        contentBytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) contentBytes[i] = binary.charCodeAt(i);
       } else {
-        content = encoder.encode(file.content);
+        contentBytes = encoder.encode(file.content);
       }
 
-      parts.push(createZipEntry(name, content));
+      const nameBytes = encoder.encode(file.name);
+      const localHeader = buildLocalFileHeader(nameBytes, contentBytes.length);
+      localEntries.push({ header: localHeader, data: contentBytes });
+      centralEntries.push(buildCentralDirEntry(nameBytes, contentBytes.length, localOffset));
+      localOffset += localHeader.length + contentBytes.length;
     }
 
-    const header = createZipHeader(files.map(f => ({ name: f.name, size: f.base64 ? atob(f.content).length : encoder.encode(f.content).length })));
-    return new Blob([...header, ...parts], { type: 'application/zip' });
-  }
-
-  function createZipHeader(files) {
-    const encoder = new TextEncoder();
-    let header = encoder.encode('PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00');
-    const dir = [];
+    const eocd = buildEOCD(centralEntries.length, localOffset, localOffset);
+    const totalSize = localEntries.reduce((s, e) => s + e.header.length + e.data.length, 0) +
+      centralEntries.reduce((s, e) => s + e.length, 0) + eocd.length;
+    const result = new Uint8Array(totalSize);
     let offset = 0;
 
-    for (const f of files) {
-      const nameBytes = encoder.encode(f.name);
-      const entry = new Uint8Array(46 + nameBytes.length);
-      entry.set(encoder.encode('PK\x03\x04'), 0);
-      entry[4] = 20; entry[5] = 0;
-      entry.set(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), 6);
-      const sizeView = new DataView(entry.buffer, 14, 4);
-      sizeView.setUint32(0, f.size, true);
-      const nameView = new DataView(entry.buffer, 28, 2);
-      nameView.setUint16(0, nameBytes.length);
-      entry.set(nameBytes, 30);
-      dir.push({ entry, offset, nameLen: nameBytes.length });
-      offset += entry.length + f.size;
+    for (const entry of localEntries) {
+      result.set(entry.header, offset); offset += entry.header.length;
+      result.set(entry.data, offset); offset += entry.data.length;
     }
 
-    const dirEntry = new Uint8Array(46);
-    dirEntry.set(encoder.encode('PK\x01\x02'), 0);
-    let di = 0;
-    for (const d of dir) {
-      dirEntry.set(d.entry.slice(0, 28), di);
-      const offView = new DataView(dirEntry.buffer, di + 42, 4);
-      offView.setUint32(0, d.offset, true);
-      di += 46;
+    const centralOffset = offset;
+    for (const entry of centralEntries) {
+      result.set(entry, offset); offset += entry.length;
     }
 
-    return [header, ...dir.map(d => d.entry)];
+    const eocdView = new DataView(eocd.buffer);
+    eocdView.setUint32(12, centralEntries.length, true);
+    eocdView.setUint32(16, centralEntries.length, true);
+    eocdView.setUint32(20, centralOffset, true);
+    eocdView.setUint32(24, offset - centralOffset, true);
+    result.set(eocd, offset);
+
+    return new Blob([result], { type: 'application/zip' });
   }
 
-  function createZipEntry(name, content) {
-    const encoder = new TextEncoder();
-    const nameBytes = encoder.encode(name);
+  function buildLocalFileHeader(nameBytes, dataSize) {
     const header = new Uint8Array(30 + nameBytes.length);
-    header.set(encoder.encode('PK\x03\x04'), 0);
-    header[4] = 20; header[5] = 0;
-    const sizeView = new DataView(header.buffer, 14, 4);
-    sizeView.setUint32(0, content.length, true);
-    const nameView = new DataView(header.buffer, 26, 2);
-    nameView.setUint16(0, nameBytes.length);
-    header.set(nameBytes, 28);
+    const view = new DataView(header.buffer);
+    view.setUint32(0, 0x04034b50, true);
+    view.setUint16(4, 20, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, 0, true);
+    view.setUint16(10, 0, true);
+    view.setUint16(12, 0, true);
+    view.setUint16(14, 0, true);
+    view.setUint16(18, 0, true);
+    view.setUint32(22, dataSize, true);
+    view.setUint32(26, dataSize, true);
+    view.setUint16(30, 0, true);
+    view.setUint16(28, nameBytes.length, true);
+    header.set(nameBytes, 30);
+    return header;
+  }
 
-    const result = new Uint8Array(header.length + content.length);
-    result.set(header, 0);
-    result.set(content, header.length);
-    return result;
+  function buildCentralDirEntry(nameBytes, dataSize, localOffset) {
+    const entry = new Uint8Array(46 + nameBytes.length);
+    const view = new DataView(entry.buffer);
+    view.setUint32(0, 0x02014b50, true);
+    view.setUint16(4, 20, true);
+    view.setUint16(6, 20, true);
+    view.setUint16(8, 0, true);
+    view.setUint16(10, 0, true);
+    view.setUint16(12, 0, true);
+    view.setUint16(14, 0, true);
+    view.setUint16(18, 0, true);
+    view.setUint16(24, 0, true);
+    view.setUint32(20, 0, true);
+    view.setUint16(28, nameBytes.length, true);
+    view.setUint32(30, 0, true);
+    view.setUint32(34, dataSize, true);
+    view.setUint32(38, dataSize, true);
+    view.setUint16(44, 0, true);
+    view.setUint32(42, localOffset, true);
+    entry.set(nameBytes, 46);
+    return entry;
+  }
+
+  function buildEOCD(numEntries, centralSize, centralOffset) {
+    const eocd = new Uint8Array(22);
+    const view = new DataView(eocd.buffer);
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint16(4, 0, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, numEntries, true);
+    view.setUint16(10, numEntries, true);
+    view.setUint32(12, centralSize, true);
+    view.setUint32(16, centralOffset, true);
+    view.setUint16(20, 0, true);
+    return eocd;
   }
 
   function extractWindowsWallpaper(blob) {

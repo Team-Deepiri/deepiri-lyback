@@ -2,13 +2,18 @@
   "name": "deepiri-livegrounds",
   "version": "1.0.0",
   "description": "Revolutionary interactive backgrounds that run everywhere",
-  "main": "src/interactive-background/core-engine.js",
+  "main": "src/interactive-background/index.js",
   "scripts": {
     "start": "npx serve .",
     "dev": "npx serve tools/wallpaper-studio",
-    "test": "echo \"No tests yet\" && exit 0",
-    "build": "echo \"No build step needed\"",
-    "lint": "echo \"No linter configured\""
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/ tools/",
+    "lint:fix": "eslint src/ tools/ --fix",
+    "format": "prettier --write \"src/**/*.js\" \"tools/**/*.js\"",
+    "format:check": "prettier --check \"src/**/*.js\" \"tools/**/*.js\"",
+    "precommit": "npm run lint && npm run test",
+    "build": "echo \"No build step needed\""
   },
   "keywords": [
     "interactive",
@@ -18,13 +23,15 @@
     "canvas"
   ],
   "author": "Deepiri",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "homepage": "https://github.com/deepiri/livegrounds#readme",
   "bugs": {
     "url": "https://github.com/deepiri/livegrounds/issues"
   },
   "dependencies": {},
   "devDependencies": {
-    "serve": "^14.2.0"
+    "eslint": "^9.0.0",
+    "serve": "^14.2.0",
+    "vitest": "^3.0.0"
   }
 }
