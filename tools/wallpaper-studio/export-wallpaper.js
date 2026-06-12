@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-unused-vars
 const WallpaperExporter = (() => {
   function exportForLively(canvas, config) {
     const html = generateWallpaperHTML(config);
@@ -9,7 +10,7 @@ const WallpaperExporter = (() => {
     return new Blob([html], { type: 'text/html' });
   }
 
-  function generateWallpaperHTML(config, fullscreen = true) {
+  function generateWallpaperHTML(config, _fullscreen = true) {
     const c = config || {};
     return `<!DOCTYPE html>
 <html>

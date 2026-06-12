@@ -280,9 +280,9 @@
   </style>
 </head>
 <body>
-  <header>
-    <h1>Interactive Background Studio</h1>
-  </header>
+    <header>
+      <h1>Interactive Background Studio <span style="font-size:0.7rem;color:#888;font-weight:400;background:linear-gradient(none);-webkit-background-clip:unset;-webkit-text-fill-color:unset">v1.0.0</span></h1>
+    </header>
 
   <div class="container">
     <aside class="sidebar">
@@ -577,24 +577,26 @@
     }
 
     function generateEngineCode(config) {
+      const gridStyle = config.gridEffect === 'prominent'
+        ? "this.ctx.strokeStyle = 'rgba(255,255,255,0.08)'"
+        : "this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'";
+      
       let code = ENGINE_CODE
         .replace('{{PARTICLE_COUNT}}', config.particleCount)
         .replace('{{PARTICLE_SIZE}}', config.particleSize)
         .replace('{{PARTICLE_SIZE_MIN}}', config.particleSize / 2)
         .replace('{{SPEED}}', config.speed)
         .replace('{{BG_COLOR}}', config.bgColor)
-        .replace('{{GLOW_ALPHA}}', config.glow * 0.2);
+        .replace('{{GLOW_ALPHA}}', config.glow * 0.2)
+        .replace("this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'", gridStyle);
 
       if (config.gridEffect === 'none') {
         code = code.replace('{{GRID_CODE}}', '');
-      } else if (config.gridEffect === 'prominent') {
-        code = code.replace('{{GRID_CODE}}`, "this.drawGrid(); } else { this.drawGrid = () => {} }");
-        code = code.replace("this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'", "this.ctx.strokeStyle = 'rgba(255,255,255,0.08)'");
       } else {
         code = code.replace('{{GRID_CODE}}', 'this.drawGrid();');
       }
 
-      return JSON.stringify(config.colors.map(c => c.replace('#', ''))).replace(/"/g, "'");
+      return code;
     }
 
     function initCanvas() {
@@ -694,10 +696,10 @@
     });
 
     document.getElementById('export-all').addEventListener('click', async () => {
-      const formats = ['png', 'svg', 'webp', 'bmp', 'jpg'];
+      const formats = ['png', 'svg', 'webp', 'bmp', 'jpg', 'wallpaper', 'theme', 'zip'];
       for (const format of formats) {
         document.querySelector(`[data-format="${format}"]`).click();
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 500));
       }
     });
 
