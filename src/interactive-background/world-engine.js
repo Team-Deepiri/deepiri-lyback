@@ -1240,7 +1240,7 @@ if (typeof module !== 'undefined' && module.exports) {
 
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && document.currentScript && document.currentScript.src) {
   try {
-    var _iw_xhr = new window.XMLHttpRequest();
+    const _iw_xhr = new window.XMLHttpRequest();
     _iw_xhr.open('GET', document.currentScript.src, false);
     _iw_xhr.overrideMimeType('text/plain');
     _iw_xhr.send();

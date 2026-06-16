@@ -1,3 +1,4 @@
+/* global InteractiveWorld */
 // eslint-disable-next-line no-unused-vars
 const WallpaperExporter = (() => {
   function exportForLively(canvas, config) {
