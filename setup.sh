@@ -41,8 +41,9 @@ cd "$REPO_ROOT"
 # --- kill (optional) ---------------------------------------------------------
 kill_repo_processes() {
   declare -A seen=()
+  declare -A serve_ports=()
   local -a pids=()
-  local pid cmd line base game_dir
+  local pid cmd line base game_dir port
 
   ports_from_cmd() {
     local s="$1" m
@@ -50,55 +51,6 @@ kill_repo_processes() {
       echo "${BASH_REMATCH[2]}"
       m="${BASH_REMATCH[0]}"
       s="${s/$m/}"
-    done
-  }
-
-  ports_from_package_json() {
-    local pkg="$1"
-    [ -f "$pkg" ] || return
-    command -v node >/dev/null 2>&1 || return
-    node -e '
-      const fs = require("fs");
-      const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-      const ports = new Set();
-      const re = /(?:-l|--listen|--port|-p)[=\s]+(\d+)/g;
-      for (const script of Object.values(pkg.scripts || {})) {
-        for (const m of String(script).matchAll(re)) ports.add(m[1]);
-      }
-      for (const p of ports) console.log(p);
-    ' "$pkg" 2>/dev/null || true
-  }
-
-  collect_host_ports() {
-    declare -A ports=()
-    local base port cmd
-
-    while IFS= read -r port; do
-      [ -n "$port" ] && ports[$port]=1
-    done < <(ports_from_package_json "$REPO_ROOT/package.json")
-
-    for game_dir in "$REPO_ROOT"/*/; do
-      base="$(basename "$game_dir")"
-      case "$base" in node_modules|tools|src|electron|assets|.github) continue ;; esac
-      [ -f "${game_dir}package.json" ] || continue
-      while IFS= read -r port; do
-        [ -n "$port" ] && ports[$port]=1
-      done < <(ports_from_package_json "${game_dir}package.json")
-    done
-
-    # Ports from live serve processes (covers fallback when the requested port is taken).
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      cmd="${line#* }"
-      [[ "$cmd" == *"$REPO_ROOT"* ]] || continue
-      [[ "$cmd" == *serve* ]] || continue
-      while IFS= read -r port; do
-        [ -n "$port" ] && ports[$port]=1
-      done < <(ports_from_cmd "$cmd")
-    done < <(pgrep -af serve 2>/dev/null || true)
-
-    for port in "${!ports[@]}"; do
-      echo "$port"
     done
   }
 
@@ -145,6 +97,11 @@ kill_repo_processes() {
     cmd="${line#* }"
     if matches_repo_process "$cmd"; then
       add_pid "$pid"
+      if [[ "$cmd" == *serve* ]]; then
+        while IFS= read -r port; do
+          [ -n "$port" ] && serve_ports[$port]=1
+        done < <(ports_from_cmd "$cmd")
+      fi
     fi
   done < <(pgrep -af . 2>/dev/null || true)
 
@@ -163,10 +120,10 @@ kill_repo_processes() {
     done < <(pgrep -af "$REPO_ROOT/$base" 2>/dev/null || true)
   done
 
-  # Host ports from package.json scripts + live serve processes.
-  while IFS= read -r port; do
-    [ -n "$port" ] && add_pids_on_port "$port"
-  done < <(collect_host_ports)
+  # Anything still listening on ports owned by matched serve processes.
+  for port in "${!serve_ports[@]}"; do
+    add_pids_on_port "$port"
+  done
 
   if [ "${#pids[@]}" -eq 0 ]; then
     info "No running Lyback / game processes found."

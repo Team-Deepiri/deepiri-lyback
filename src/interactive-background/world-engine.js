@@ -1681,6 +1681,15 @@ const InteractiveWorld = (() => {
       });
       this.canvas.addEventListener('click', (e) => {
         const rect = this.canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        if (this.onEscape && this._settingsBtnRect) {
+          const r = this._settingsBtnRect;
+          if (sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h) {
+            this.onEscape();
+            return;
+          }
+        }
         const mx = e.clientX - rect.left + this.cameraX;
         const my = e.clientY - rect.top + this.cameraY;
         for (const p of this.portals) {
@@ -3068,19 +3077,53 @@ const InteractiveWorld = (() => {
       const posLabel = this.playerCount > 1
         ? 'x:' + this.players.map(pl => Math.floor(pl.x)).join('/')
         : `x:${Math.floor(this.players[0].x)}`;
-      ctx.fillText(`${biomeName} | ${posLabel}`, W - 14, 14);
+      ctx.fillText(`${biomeName} | ${posLabel}`, W - 14, this.onEscape ? 48 : 14);
 
       ctx.textAlign = 'left';
       const dayPhase = this.timeOfDay < 0.25 ? 'Night' : this.timeOfDay < 0.45 ? 'Dawn' : this.timeOfDay < 0.7 ? 'Day' : this.timeOfDay < 0.85 ? 'Dusk' : 'Night';
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.fillText(dayPhase, 14, hudY + 18);
+      if (this.onEscape) this.drawSettingsButton(ctx, W);
+    }
+
+    drawSettingsButton(ctx, W) {
+      const label = '⚙ Settings';
+      ctx.font = '600 13px system-ui, sans-serif';
+      const tw = ctx.measureText(label).width + 28;
+      const h = 32;
+      const x = W - tw - 14;
+      const y = 10;
+      this._settingsBtnRect = { x, y, w: tw, h };
+
+      ctx.fillStyle = 'rgba(13, 13, 20, 0.88)';
+      ctx.strokeStyle = 'rgba(78, 205, 196, 0.45)';
+      ctx.lineWidth = 1;
+      const r = 8;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + tw - r, y);
+      ctx.quadraticCurveTo(x + tw, y, x + tw, y + r);
+      ctx.lineTo(x + tw, y + h - r);
+      ctx.quadraticCurveTo(x + tw, y + h, x + tw - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#e8e8f0';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, x + 14, y + h / 2);
     }
 
     drawMinimap(ctx, W, H) {
       const mapW = 120;
       const mapH = 60;
       const mx = W - mapW - 14;
-      const my = 14;
+      const my = this.onEscape ? 56 : 14;
       const scaleX = mapW / CFG.WORLD_WIDTH;
       const scaleY = mapH / CFG.WORLD_HEIGHT;
 
