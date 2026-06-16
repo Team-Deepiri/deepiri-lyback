@@ -17,7 +17,12 @@ const InteractiveWorld = (() => {
     CREATURE_COUNT: DEFAULTS.WORLD_CREATURE_COUNT || 15,
     CHEST_COUNT: DEFAULTS.WORLD_CHEST_COUNT || 5,
     CRYSTAL_COUNT: DEFAULTS.WORLD_CRYSTAL_COUNT || 8,
-    COLORS: DEFAULTS.DEFAULT_COLORS || ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
+    COLORS: DEFAULTS.DEFAULT_COLORS || ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'],
+    SKY_TOP: DEFAULTS.WORLD_SKY_TOP || '#0a0a1a',
+    SKY_BOTTOM: DEFAULTS.WORLD_SKY_BOTTOM || '#1a2a3e',
+    GROUND_TOP: DEFAULTS.WORLD_GROUND_TOP || '#3a7d5a',
+    GROUND_BOTTOM: DEFAULTS.WORLD_GROUND_BOTTOM || '#1a0a0a',
+    PLAYER_COLOR: DEFAULTS.WORLD_PLAYER_COLOR || '#4ecdc4'
   };
 
   const SEGMENTS = 250;
@@ -411,10 +416,20 @@ const InteractiveWorld = (() => {
       }
     }
 
-    draw(ctx, cx, cy) {
+    shadeColor(color, amount) {
+      const num = parseInt(color.replace('#', ''), 16);
+      const r = Math.min(255, Math.max(0, (num >> 16) + Math.round(amount * 255)));
+      const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + Math.round(amount * 255)));
+      const b = Math.min(255, Math.max(0, (num & 0x0000FF) + Math.round(amount * 255)));
+      return `rgb(${r},${g},${b})`;
+    }
+
+    draw(ctx, cx, cy, playerColor) {
       const sx = this.x - cx;
       const sy = this.y - cy;
       ctx.save();
+      const bodyColor = playerColor || '#4ecdc4';
+      const darkBodyColor = playerColor ? this.shadeColor(playerColor, -0.4) : '#2d1b4e';
 
       if (this.landDust > 0) {
         ctx.fillStyle = `rgba(200, 180, 150, ${this.landDust / 12})`;
@@ -426,12 +441,12 @@ const InteractiveWorld = (() => {
         }
       }
 
-      ctx.fillStyle = '#2d1b4e';
+      ctx.fillStyle = darkBodyColor;
       const legAnim = this.isMoving && this.onGround ? Math.sin(this.walkFrame * 2) * 3 : 0;
       ctx.fillRect(sx + 3, sy + this.h - 6, 5, 6 + legAnim);
       ctx.fillRect(sx + this.w - 8, sy + this.h - 6, 5, 6 - legAnim);
 
-      ctx.fillStyle = '#4ecdc4';
+      ctx.fillStyle = bodyColor;
       ctx.fillRect(sx + 1, sy + 10, this.w - 2, this.h - 14);
 
       ctx.fillStyle = '#ff6b6b';
@@ -475,6 +490,13 @@ const InteractiveWorld = (() => {
       this.weatherTimer = 0;
       this.weatherParticles = [];
       this.showMinimap = true;
+      this.forcedBiome = null;
+      this._biomePalette = null;
+      this._skyTopR = this._skyTopG = this._skyTopB = null;
+      this._skyBotR = this._skyBotG = this._skyBotB = null;
+      this._groundTopR = this._groundTopG = this._groundTopB = null;
+      this._groundBotR = this._groundBotG = this._groundBotB = null;
+      this._playerColor = null;
       this.init();
     }
 
@@ -663,7 +685,7 @@ const InteractiveWorld = (() => {
       this.drawChests(ctx, cx, cy, W, H);
       this.drawPortals(ctx, cx, cy, W, H);
       this.drawCreatures(ctx, cx, cy, W, H);
-      this.player.draw(ctx, cx, cy);
+      this.player.draw(ctx, cx, cy, this._playerColor);
       this.drawParticles(ctx, cx, cy, W, H);
       this.drawWeather(ctx, cx, cy, W, H);
       this.drawInteractions(ctx, W, H);
@@ -673,9 +695,16 @@ const InteractiveWorld = (() => {
 
     drawSky(ctx, W, H, cx, cy) {
       const tod = this.timeOfDay;
-      let r1 = 10, g1 = 10, b1 = 26;
-      let r2 = 26, g2 = 42, b2 = 62;
-      let r3 = 26, g3 = 42, b3 = 62;
+      const hasCustomSky = this._skyTopR !== null && this._skyBotR !== null;
+      let r1 = hasCustomSky ? this._skyTopR : 10;
+      let g1 = hasCustomSky ? this._skyTopG : 10;
+      let b1 = hasCustomSky ? this._skyTopB : 26;
+      let r2 = hasCustomSky ? this._skyBotR : 26;
+      let g2 = hasCustomSky ? this._skyBotG : 42;
+      let b2 = hasCustomSky ? this._skyBotB : 62;
+      let r3 = hasCustomSky ? this._skyBotR : 26;
+      let g3 = hasCustomSky ? this._skyBotG : 42;
+      let b3 = hasCustomSky ? this._skyBotB : 62;
       let starAlpha = 0.7;
 
       if (tod < 0.2 || tod > 0.8) {
@@ -787,14 +816,14 @@ const InteractiveWorld = (() => {
       const step = 8;
       const startX = Math.max(0, Math.floor(cx / step) * step);
       const endX = Math.min(CFG.WORLD_WIDTH, cx + W + step);
+      const fp = this._biomePalette;
+
+      const bc = (x, k) => fp ? fp[k] : getBiome(x)[k];
+      const biomeName = fp ? fp.name : null;
 
       for (let x = startX; x <= endX; x += 1) {
         const ty = getTerrainY(this.terrain, x);
-        const biome = getBiome(x);
-        const nextBiome = getBiome(x + 20);
-        const col = biome.name === nextBiome.name ? biome.dirt : biome.dirt;
-
-        ctx.fillStyle = col;
+        ctx.fillStyle = bc(x, 'dirt');
         ctx.fillRect(x - cx, ty - cy, 2, H - (ty - cy));
       }
 
@@ -809,10 +838,14 @@ const InteractiveWorld = (() => {
 
       const tod = this.timeOfDay;
       const darken = tod < 0.2 || tod > 0.8 ? 0.6 : tod < 0.3 || tod > 0.7 ? 0.8 : 1;
+      const bp = fp;
+      const gtc = bp ? this.hexToRgb(bp.ground) || { r: 58, g: 125, b: 90 } : { r: 58, g: 125, b: 90 };
+      const gbc = bp ? this.hexToRgb(bp.dirt) || { r: 45, g: 107, b: 74 } : { r: 45, g: 107, b: 74 };
+      const gcc = bp ? this.hexToRgb('#2a1a0a') || { r: 42, g: 26, b: 10 } : { r: 42, g: 26, b: 10 };
       const groundGrad = ctx.createLinearGradient(0, 0, 0, H);
-      groundGrad.addColorStop(0, `rgba(58,125,90,${0.9 * darken})`);
-      groundGrad.addColorStop(0.05, `rgba(45,107,74,${0.9 * darken})`);
-      groundGrad.addColorStop(0.15, `rgba(58,42,26,${darken})`);
+      groundGrad.addColorStop(0, `rgba(${gtc.r},${gtc.g},${gtc.b},${0.9 * darken})`);
+      groundGrad.addColorStop(0.05, `rgba(${gbc.r},${gbc.g},${gbc.b},${0.9 * darken})`);
+      groundGrad.addColorStop(0.15, `rgba(${gcc.r},${gcc.g},${gcc.b},${darken})`);
       groundGrad.addColorStop(0.5, `rgba(42,26,26,${darken})`);
       groundGrad.addColorStop(1, `rgba(26,10,10,${darken})`);
       ctx.fillStyle = groundGrad;
@@ -820,15 +853,14 @@ const InteractiveWorld = (() => {
 
       for (let x = startX; x <= endX; x += step) {
         const ty = getTerrainY(this.terrain, x);
-        const biome = getBiome(x);
-        ctx.fillStyle = biome.grass;
+        ctx.fillStyle = bc(x, 'grass');
         ctx.fillRect(x - cx, ty - cy, step + 1, 4);
       }
 
       for (let x = startX; x <= endX; x += step * 3) {
         const ty = getTerrainY(this.terrain, x);
-        const biome = getBiome(x);
-        ctx.fillStyle = `rgba(${biome.name === 'desert' ? '180,160,80' : biome.name === 'tundra' ? '120,180,200' : '60,180,100'}, 0.15)`;
+        const bn = biomeName || getBiome(x).name;
+        ctx.fillStyle = `rgba(${bn === 'desert' ? '180,160,80' : bn === 'tundra' ? '120,180,200' : '60,180,100'}, 0.15)`;
         const gh = 6 + Math.sin(x * 0.1) * 4;
         for (let g = 0; g < gh; g++) {
           const gx = x + Math.sin(g * 0.7 + x * 0.05) * 4;
@@ -1039,11 +1071,12 @@ const InteractiveWorld = (() => {
         hudY += 18;
       }
 
-      const biome = getBiome(this.player.x + this.player.w / 2);
+      const biome = this._biomePalette || getBiome(this.player.x + this.player.w / 2);
+      const biomeName = biome.name || 'custom';
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.font = '10px monospace';
       ctx.textAlign = 'right';
-      ctx.fillText(`${biome.name} | x:${Math.floor(this.player.x)}`, W - 14, 14);
+      ctx.fillText(`${biomeName} | x:${Math.floor(this.player.x)}`, W - 14, 14);
 
       ctx.textAlign = 'left';
       const dayPhase = this.timeOfDay < 0.25 ? 'Night' : this.timeOfDay < 0.45 ? 'Dawn' : this.timeOfDay < 0.7 ? 'Day' : this.timeOfDay < 0.85 ? 'Dusk' : 'Night';
@@ -1137,6 +1170,51 @@ const InteractiveWorld = (() => {
       this.isRunning = false;
     }
 
+    applyWorldConfig(cfg = {}) {
+      if (cfg.timeOfDay !== undefined) this.timeOfDay = cfg.timeOfDay;
+      if (cfg.weather && cfg.weather !== 'auto') {
+        this.weatherState = cfg.weather;
+        this.weatherTimer = -9999;
+      }
+      if (cfg.biome && cfg.biome !== 'auto') {
+        this.forcedBiome = cfg.biome;
+        this.regenerateTerrainColors();
+      }
+      if (cfg.skyTop) {
+        const c = this.hexToRgb(cfg.skyTop);
+        if (c) { this._skyTopR = c.r; this._skyTopG = c.g; this._skyTopB = c.b; }
+      }
+      if (cfg.skyBottom) {
+        const c = this.hexToRgb(cfg.skyBottom);
+        if (c) { this._skyBotR = c.r; this._skyBotG = c.g; this._skyBotB = c.b; }
+      }
+      if (cfg.groundTop) {
+        const c = this.hexToRgb(cfg.groundTop);
+        if (c) { this._groundTopR = c.r; this._groundTopG = c.g; this._groundTopB = c.b; }
+      }
+      if (cfg.groundBottom) {
+        const c = this.hexToRgb(cfg.groundBottom);
+        if (c) { this._groundBotR = c.r; this._groundBotG = c.g; this._groundBotB = c.b; }
+      }
+      if (cfg.playerColor) this._playerColor = cfg.playerColor;
+    }
+
+    hexToRgb(hex) {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : null;
+    }
+
+    regenerateTerrainColors() {
+      const biome = this.forcedBiome || 'forest';
+      const palettes = {
+        forest: { grass: '#4a9e6b', dirt: '#3a7d5a', ground: '#2d6b4a', accent: '#6abf4a' },
+        desert: { grass: '#c4a65a', dirt: '#a08040', ground: '#8a6e30', accent: '#d4b66a' },
+        tundra: { grass: '#8ab0c4', dirt: '#6a8a9e', ground: '#5a7a8e', accent: '#aac4d4' },
+        plains: { grass: '#5aaa6b', dirt: '#4a8a5a', ground: '#3a7a4a', accent: '#7aca8b' }
+      };
+      this._biomePalette = palettes[biome] || palettes.forest;
+    }
+
     exportConfig() {
       return {
         mode: this.mode,
@@ -1146,6 +1224,8 @@ const InteractiveWorld = (() => {
         portalCount: CFG.PORTAL_COUNT,
         particleCount: CFG.PARTICLE_COUNT,
         creatureCount: CFG.CREATURE_COUNT,
+        chestCount: CFG.CHEST_COUNT,
+        crystalCount: CFG.CRYSTAL_COUNT,
         colors: CFG.COLORS
       };
     }
@@ -1156,4 +1236,16 @@ const InteractiveWorld = (() => {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = InteractiveWorld;
+}
+
+if (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) {
+  try {
+    var __iw_req = new XMLHttpRequest();
+    __iw_req.open('GET', document.currentScript.src, false);
+    __iw_req.overrideMimeType('text/plain');
+    __iw_req.send();
+    if (__iw_req.status === 0 || __iw_req.status === 200) {
+      InteractiveWorld.__source__ = __iw_req.responseText;
+    }
+  } catch (__iw_e) {}
 }

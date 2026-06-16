@@ -129,13 +129,19 @@ ${getEmbeddedEngine(c)}
     if (mode === 'world') {
       let worldSource = '';
       if (typeof InteractiveWorld !== 'undefined') {
-        worldSource = InteractiveWorld.toString();
+        worldSource = InteractiveWorld.__source__ || InteractiveWorld.toString();
+      }
+      if (!worldSource || worldSource === '[object Object]') {
+        try { worldSource = InteractiveWorld.WorldEngine.toString(); } catch(e) {}
       }
       const defaults = {
         WORLD_WIDTH: c.worldWidth || 5000,
         WORLD_PLATFORM_COUNT: c.platformCount || 10,
         WORLD_PORTAL_COUNT: c.portalCount || 6,
         WORLD_PARTICLE_COUNT: c.particleCount || 60,
+        WORLD_CREATURE_COUNT: c.creatureCount || 15,
+        WORLD_CHEST_COUNT: c.chestCount || 5,
+        WORLD_CRYSTAL_COUNT: c.crystalCount || 8,
         DEFAULT_COLORS: c.colors || ['#ff6b6b','#4ecdc4','#45b7d1','#96ceb4','#ffeaa7','#dfe6e9']
       };
       return `const DEEPIRI_DEFAULTS = ${JSON.stringify(defaults)};

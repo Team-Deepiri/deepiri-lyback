@@ -13,13 +13,19 @@ const WallpaperExporter = (() => {
   function generateWorldEngineSource(config) {
     let source = '';
     if (typeof InteractiveWorld !== 'undefined') {
-      source = InteractiveWorld.toString();
+      source = InteractiveWorld.__source__ || InteractiveWorld.toString();
+    }
+    if (!source || source === '[object Object]') {
+      try { source = InteractiveWorld.WorldEngine.toString(); } catch(e) {}
     }
     const defaults = {
       WORLD_WIDTH: config.worldWidth || 5000,
       WORLD_PLATFORM_COUNT: config.platformCount || 10,
       WORLD_PORTAL_COUNT: config.portalCount || 6,
       WORLD_PARTICLE_COUNT: config.particleCount || 60,
+      WORLD_CREATURE_COUNT: config.creatureCount || 15,
+      WORLD_CHEST_COUNT: config.chestCount || 5,
+      WORLD_CRYSTAL_COUNT: config.crystalCount || 8,
       DEFAULT_COLORS: config.colors || ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
     };
     return 'const DEEPIRI_DEFAULTS = ' + JSON.stringify(defaults) + ';\n' + source;
