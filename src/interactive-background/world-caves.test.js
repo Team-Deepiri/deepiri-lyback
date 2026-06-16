@@ -127,6 +127,24 @@ describe('survival and heaven helpers', () => {
     expect(shovels.some((s) => s.kind === 'cave')).toBe(true);
   });
 
+  it('limits cave decor per area and snaps props to room floors', () => {
+    const caves = generateCaves(terrain);
+    const { caveChests, buckets } = InteractiveWorld.layoutCaveProps(caves, terrain);
+    let totalBoulders = 0, totalCrystals = 0;
+    for (const c of caves.chambers) {
+      totalBoulders += (c.boulders || []).length;
+      totalCrystals += (c.crystals || []).length;
+      for (const b of (c.boulders || [])) {
+        const fy = InteractiveWorld.roomFloorY(c, b.dx);
+        expect(Math.abs(fy - (c.y + b.dy))).toBeLessThan(1);
+      }
+    }
+    expect(totalBoulders).toBeLessThan(caves.chambers.length * 2);
+    expect(totalCrystals).toBeLessThan(caves.chambers.length);
+    expect(caveChests.length).toBeLessThanOrEqual(caves.pockets.length);
+    expect(buckets.length).toBeLessThan(caves.chambers.length);
+  });
+
   it('detects rock walls beside the player for wall grab', () => {
     const caves = generateCaves(terrain);
     const x = 4800;

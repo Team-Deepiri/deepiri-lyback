@@ -68,6 +68,7 @@ The engine lives in `../src/interactive-background/world-engine.js`. Cavesweat l
 - **F** — dig (pick up a shovel first)
 - **R** — hold to rub sticks together (need 2 sticks; 10 seconds starts a fire)
 - **M** — toggle minimap
+- **Esc** — settings (reset world, pause)
 
 ## Survival
 

@@ -221,47 +221,150 @@ const InteractiveWorld = (() => {
   // player can drop in.
   const COLORS_LIST = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'];
 
-  function makeCaveCrystals(r) {
-    const out = [];
-    const n = 2 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < n; i++) {
-      out.push({
-        dx: (Math.random() - 0.5) * r * 1.2,
-        dy: r * 0.45 + Math.random() * r * 0.35,
-        r: 2.5 + Math.random() * 3.5,
-        color: COLORS_LIST[Math.floor(Math.random() * COLORS_LIST.length)]
-      });
-    }
-    return out;
-  }
-
   function makeStalactites(r) {
     const out = [];
-    const n = 3 + Math.floor(Math.random() * 4);
+    const n = 1 + Math.floor(Math.random() * 2);
     for (let i = 0; i < n; i++) {
       out.push({
-        dx: (Math.random() - 0.5) * r * 1.5,
-        len: 8 + Math.random() * 22,
-        w: 4 + Math.random() * 6,
-        up: Math.random() < 0.5 // false = hangs from ceiling, true = rises from floor
+        dx: (Math.random() - 0.5) * r * 1.0,
+        len: 10 + Math.random() * 16,
+        w: 3 + Math.random() * 4,
+        up: false
       });
     }
     return out;
   }
 
   function makeChamber(x, y, r) {
-    // Deeper chambers accumulate more loose rock/boulders on the floor.
-    const depthFrac = Math.min(1, y / CFG.WORLD_HEIGHT);
-    const boulders = [];
-    const nb = Math.floor(depthFrac * 8);
-    for (let i = 0; i < nb; i++) {
-      boulders.push({
-        dx: (Math.random() - 0.5) * r * 1.5,
-        dy: r * 0.5 + Math.random() * r * 0.4,
-        r: 4 + Math.random() * 9 * (0.4 + depthFrac)
-      });
+    return { x, y, r, crystals: [], stalactites: makeStalactites(r), boulders: [] };
+  }
+
+  const CAVE_DECOR_CELL = 200;
+  const CAVE_DECOR_LIMITS = { boulder: 2, crystal: 1, chest: 1, bucket: 1 };
+  const CAVE_DECOR_MAX_PER_CELL = 4;
+
+  // Y on the bottom arc of a circular chamber/pocket.
+  function roomFloorY(room, dx) {
+    const clamped = Math.min(Math.abs(dx), room.r - 5);
+    return room.y + Math.sqrt(room.r * room.r - clamped * clamped);
+  }
+
+  function createCaveDecorGrid() {
+    const grid = new Map();
+    return {
+      canPlace(x, y, type) {
+        const k = `${Math.floor(x / CAVE_DECOR_CELL)},${Math.floor(y / CAVE_DECOR_CELL)}`;
+        const cell = grid.get(k) || { boulder: 0, crystal: 0, chest: 0, bucket: 0, total: 0 };
+        if (cell.total >= CAVE_DECOR_MAX_PER_CELL) return false;
+        if (cell[type] >= CAVE_DECOR_LIMITS[type]) return false;
+        return true;
+      },
+      mark(x, y, type) {
+        const k = `${Math.floor(x / CAVE_DECOR_CELL)},${Math.floor(y / CAVE_DECOR_CELL)}`;
+        const cell = grid.get(k) || { boulder: 0, crystal: 0, chest: 0, bucket: 0, total: 0 };
+        cell[type]++;
+        cell.total++;
+        grid.set(k, cell);
+      }
+    };
+  }
+
+  // Pick a spot on the floor arc inside carved cave space.
+  function pickRoomFloorSpot(caves, heights, room, minSep = 36) {
+    for (let t = 0; t < 14; t++) {
+      const dx = (Math.random() - 0.5) * room.r * 1.35;
+      if (Math.abs(dx) >= room.r - 8) continue;
+      const x = room.x + dx;
+      const y = roomFloorY(room, dx);
+      if (!caveCarved(caves, x, y - 4)) continue;
+      if (!caveCarved(caves, x, y - 12)) continue;
+      if (!isRockAt(caves, heights, x, y + 5)) continue;
+      if (room._placed) {
+        let ok = true;
+        for (const p of room._placed) {
+          const ddx = p.x - x, ddy = p.y - y;
+          if (ddx * ddx + ddy * ddy < minSep * minSep) { ok = false; break; }
+        }
+        if (!ok) continue;
+      }
+      return { x, y, dx };
     }
-    return { x, y, r, crystals: makeCaveCrystals(r), stalactites: makeStalactites(r), boulders };
+    return null;
+  }
+
+  // Spread boulders, crystals, chests, and buckets with per-area caps.
+  function layoutCaveProps(caves, heights) {
+    const grid = createCaveDecorGrid();
+    const LOOT = ['💎 Gems', '🗝️ Old Key', '📜 Map Scrap', '🪙 Gold Stash', '🔮 Relic', '⚙️ Cog'];
+    const caveChests = [];
+    const buckets = [];
+
+    for (const c of caves.chambers) {
+      c.boulders = [];
+      c.crystals = [];
+      c._placed = [];
+      const depthFrac = Math.min(1, c.y / CFG.WORLD_HEIGHT);
+
+      if (Math.random() < 0.28 + depthFrac * 0.15) {
+        const n = Math.random() < 0.35 + depthFrac * 0.25 ? 2 : 1;
+        for (let i = 0; i < n; i++) {
+          const spot = pickRoomFloorSpot(caves, heights, c);
+          if (!spot || !grid.canPlace(spot.x, spot.y, 'boulder')) continue;
+          grid.mark(spot.x, spot.y, 'boulder');
+          c._placed.push(spot);
+          c.boulders.push({
+            dx: spot.dx,
+            dy: spot.y - c.y,
+            r: 4 + Math.random() * 5 * (0.45 + depthFrac * 0.55)
+          });
+        }
+      }
+
+      if (Math.random() < 0.18) {
+        const spot = pickRoomFloorSpot(caves, heights, c);
+        if (spot && grid.canPlace(spot.x, spot.y, 'crystal')) {
+          grid.mark(spot.x, spot.y, 'crystal');
+          c._placed.push(spot);
+          c.crystals.push({
+            dx: spot.dx,
+            dy: spot.y - c.y,
+            r: 2 + Math.random() * 2.5,
+            color: COLORS_LIST[Math.floor(Math.random() * COLORS_LIST.length)]
+          });
+        }
+      }
+
+      if (c.y > getTerrainY(heights, c.x) + 320 && Math.random() < 0.22) {
+        const spot = pickRoomFloorSpot(caves, heights, c, 44);
+        if (spot && grid.canPlace(spot.x, spot.y, 'bucket')) {
+          grid.mark(spot.x, spot.y, 'bucket');
+          c._placed.push(spot);
+          buckets.push({ x: spot.x, y: spot.y - 6, bob: Math.random() * 6 });
+        }
+      }
+      delete c._placed;
+    }
+
+    for (const p of (caves.pockets || [])) {
+      p._placed = [];
+      const spot = pickRoomFloorSpot(caves, heights, p, 40);
+      if (spot && grid.canPlace(spot.x, spot.y, 'chest')) {
+        grid.mark(spot.x, spot.y, 'chest');
+        caveChests.push({
+          x: spot.x - 10, y: spot.y - 14, w: 20, h: 16, open: false,
+          pulse: Math.random() * 6,
+          loot: LOOT[Math.floor(Math.random() * LOOT.length)]
+        });
+      }
+      const bSpot = pickRoomFloorSpot(caves, heights, p, 50);
+      if (bSpot && grid.canPlace(bSpot.x, bSpot.y, 'bucket')) {
+        grid.mark(bSpot.x, bSpot.y, 'bucket');
+        buckets.push({ x: bSpot.x, y: bSpot.y - 6, bob: Math.random() * 6 });
+      }
+      delete p._placed;
+    }
+
+    return { caveChests, buckets };
   }
 
   // Carve a meandering tunnel from A to B as several jittered capsule segments,
@@ -1246,7 +1349,9 @@ const InteractiveWorld = (() => {
       this._rubProgress = 0;
       this.heat = 0;
       this._digTarget = null;
-      this.buildCaveItems();
+      const layout = layoutCaveProps(this.caves, this.terrain);
+      this.caveChests = layout.caveChests;
+      this.buckets = layout.buckets;
 
       const startY = getTerrainY(this.terrain, 100);
       this.player = new Player(100, startY - CFG.PLAYER_H - 5);
@@ -1409,26 +1514,7 @@ const InteractiveWorld = (() => {
       }
     }
 
-    // Place a chest + bucket in every sealed pocket, plus survival buckets in
-    // deeper connected chambers.
-    buildCaveItems() {
-      this.caveChests = [];
-      this.buckets = [];
-      const LOOT = ['💎 Gems', '🗝️ Old Key', '📜 Map Scrap', '🪙 Gold Stash', '🔮 Relic', '⚙️ Cog'];
-      for (const p of this.caves.pockets) {
-        const fy = p.y + p.r * 0.45;
-        this.caveChests.push({
-          x: p.x - 14, y: fy, w: 20, h: 16, open: false,
-          pulse: Math.random() * 6, loot: LOOT[Math.floor(Math.random() * LOOT.length)]
-        });
-        this.buckets.push({ x: p.x + 16, y: fy + 2, bob: Math.random() * 6 });
-      }
-      for (const c of this.caves.chambers) {
-        if (c.y > getTerrainY(this.terrain, c.x) + 320 && Math.random() < 0.5) {
-          this.buckets.push({ x: c.x + (Math.random() - 0.5) * c.r * 0.5, y: c.y + c.r * 0.5, bob: Math.random() * 6 });
-        }
-      }
-    }
+    // Cave loot placement handled by layoutCaveProps at init.
 
     // Heat rises with depth: the player sweats out water, lava scorches, and
     // running dry sends them back to the surface. In heaven, freeze replaces sweat.
@@ -2162,12 +2248,27 @@ const InteractiveWorld = (() => {
         if (!onScreen(c.x, c.y, c.r)) continue;
         const gx = c.x - cx, gy = c.y - cy;
 
-        // boulders (more in deeper rooms)
-        ctx.fillStyle = '#1b1620';
+        // boulders — flat rocks sitting on the chamber floor arc
         for (const b of (c.boulders || [])) {
+          const bx = gx + b.dx, by = gy + b.dy;
+          const br = b.r;
+          const tilt = b.dx * 0.04;
+          ctx.save();
+          ctx.translate(bx, by);
+          ctx.rotate(tilt);
+          ctx.fillStyle = '#2e2830';
           ctx.beginPath();
-          ctx.ellipse(gx + b.dx, gy + b.dy, b.r, b.r * 0.7, 0, 0, Math.PI * 2);
+          ctx.ellipse(0, -br * 0.15, br, br * 0.5, 0, 0, Math.PI * 2);
           ctx.fill();
+          ctx.fillStyle = '#4a4048';
+          ctx.beginPath();
+          ctx.ellipse(-br * 0.15, -br * 0.35, br * 0.55, br * 0.32, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(120,110,100,0.35)';
+          ctx.beginPath();
+          ctx.ellipse(-br * 0.25, -br * 0.45, br * 0.25, br * 0.12, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         }
 
         // stalactites / stalagmites
@@ -2211,12 +2312,20 @@ const InteractiveWorld = (() => {
         ctx.fill();
 
         for (const cr of (c.crystals || [])) {
+          const cx2 = gx + cr.dx, cy2 = gy + cr.dy;
+          ctx.save();
+          ctx.translate(cx2, cy2 - cr.r);
           ctx.fillStyle = cr.color;
           ctx.shadowColor = cr.color;
-          ctx.shadowBlur = 10;
+          ctx.shadowBlur = 6;
           ctx.beginPath();
-          ctx.arc(gx + cr.dx, gy + cr.dy, cr.r, 0, Math.PI * 2);
+          ctx.moveTo(0, -cr.r * 2.2);
+          ctx.lineTo(cr.r * 0.55, 0);
+          ctx.lineTo(0, cr.r * 0.4);
+          ctx.lineTo(-cr.r * 0.55, 0);
+          ctx.closePath();
           ctx.fill();
+          ctx.restore();
         }
         ctx.shadowBlur = 0;
       }
@@ -2786,7 +2895,7 @@ const InteractiveWorld = (() => {
     WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt, touchesWall,
     materialAt, MATERIALS, digCellKey, DIG_CELL, inHeavenZone, computeSweatRate,
     generateShovels, generateCaveShovels, generateSticks, generateCaveSticks,
-    generateAscentPlatforms, generateCloudPlatforms
+    generateAscentPlatforms, generateCloudPlatforms, layoutCaveProps, roomFloorY
   };
 })();
 
