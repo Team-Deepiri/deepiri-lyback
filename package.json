@@ -4,7 +4,8 @@
   "description": "Revolutionary interactive backgrounds that run everywhere",
   "main": "src/interactive-background/index.js",
   "scripts": {
-    "start": "npx serve .",
+    "start": "electron electron/main.js",
+    "serve": "npx serve .",
     "dev": "npx serve tools/wallpaper-studio",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -30,6 +31,7 @@
   },
   "dependencies": {},
   "devDependencies": {
+    "electron": "^31.0.0",
     "eslint": "^9.0.0",
     "serve": "^14.2.0",
     "vitest": "^3.0.0"
