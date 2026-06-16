@@ -124,7 +124,7 @@
     </div>
   </div>
   <div id="hud">
-    WASD / Arrows: Move &nbsp;|&nbsp; Space: Jump &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; M: Minimap
+    WASD / Arrows: Move &nbsp;|&nbsp; Space: Jump &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; M: Minimap &nbsp;|&nbsp; Esc: Settings
   </div>
 
   <script src="config.js"></script>
@@ -142,11 +142,19 @@
     let pendingRuntime = null;
 
     function openSettings() {
+      if (engine && engine.isRunning) {
+        engine.stop();
+        engine._settingsPaused = true;
+      }
       settingsPanel.classList.add('open');
     }
 
     function closeSettings() {
       settingsPanel.classList.remove('open');
+      if (engine && engine._settingsPaused) {
+        engine._settingsPaused = false;
+        engine.start();
+      }
     }
 
     function resetGame() {
@@ -221,7 +229,17 @@
       if (e.target === settingsPanel) closeSettings();
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && settingsPanel.classList.contains('open')) closeSettings();
+      if (e.key !== 'Escape') return;
+      if (settingsPanel.classList.contains('open')) {
+        closeSettings();
+        return;
+      }
+      // Terminal mode: world-engine handles Escape to leave the computer.
+      if (engine && engine.computerMode) return;
+      if (engine && settingsBtn.classList.contains('visible')) {
+        e.preventDefault();
+        openSettings();
+      }
     });
 
     boot();
