@@ -299,6 +299,16 @@
       </div>
 
       <div class="panel">
+        <h3>Mode</h3>
+        <div class="control-group">
+          <select id="mode-select">
+            <option value="particles">Particles</option>
+            <option value="world" selected>World</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="panel" id="particle-controls">
         <h3>Particles</h3>
         <div class="control-group">
           <label>Count: <span id="particle-count-val">200</span></label>
@@ -311,6 +321,26 @@
         <div class="control-group">
           <label>Speed: <span id="speed-val">3</span></label>
           <input type="range" id="speed" min="1" max="10" value="3">
+        </div>
+      </div>
+
+      <div class="panel" id="world-controls">
+        <h3>World</h3>
+        <div class="control-group">
+          <label>World Width: <span id="world-width-val">5000</span></label>
+          <input type="range" id="world-width" min="2000" max="10000" value="5000">
+        </div>
+        <div class="control-group">
+          <label>Platforms: <span id="platform-count-val">10</span></label>
+          <input type="range" id="platform-count" min="3" max="20" value="10">
+        </div>
+        <div class="control-group">
+          <label>Portals: <span id="portal-count-val">6</span></label>
+          <input type="range" id="portal-count" min="2" max="8" value="6">
+        </div>
+        <div class="control-group">
+          <label>Atmosphere Particles: <span id="world-particles-val">60</span></label>
+          <input type="range" id="world-particles" min="10" max="150" value="60">
         </div>
       </div>
 
@@ -330,7 +360,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="particle-effects">
         <h3>Effects</h3>
         <div class="control-group">
           <label>Grid</label>
@@ -411,6 +441,7 @@
   </div>
 
   <script src="../../src/interactive-background/core-engine.js"></script>
+  <script src="../../src/interactive-background/world-engine.js"></script>
   <script src="../../src/interactive-background/encoder.js"></script>
   <script src="../../src/interactive-background/player.js"></script>
   <script src="export-wallpaper.js"></script>
@@ -559,44 +590,86 @@
     `;
 
     let engine = null;
+    let currentMode = 'world';
+
+    function toggleControls(mode) {
+      const particleControls = document.getElementById('particle-controls');
+      const worldControls = document.getElementById('world-controls');
+      const particleEffects = document.getElementById('particle-effects');
+      if (mode === 'particles') {
+        particleControls.style.display = 'block';
+        worldControls.style.display = 'none';
+        particleEffects.style.display = 'block';
+      } else {
+        particleControls.style.display = 'none';
+        worldControls.style.display = 'block';
+        particleEffects.style.display = 'none';
+      }
+    }
 
     function getConfig() {
-      return {
-        particleCount: parseInt(document.getElementById('particle-count').value),
-        particleSize: parseInt(document.getElementById('particle-size').value),
-        speed: parseInt(document.getElementById('speed').value),
+      const mode = document.getElementById('mode-select').value;
+      const base = {
+        mode: mode,
         colors: [
           document.getElementById('color1').value,
           document.getElementById('color2').value,
           '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'
-        ],
-        bgColor: document.getElementById('bg-color').value,
-        gridEffect: document.getElementById('grid-effect').value,
-        glow: parseInt(document.getElementById('mouse-glow').value) / 100
+        ]
       };
+      if (mode === 'particles') {
+        return {
+          ...base,
+          particleCount: parseInt(document.getElementById('particle-count').value),
+          particleSize: parseInt(document.getElementById('particle-size').value),
+          speed: parseInt(document.getElementById('speed').value),
+          bgColor: document.getElementById('bg-color').value,
+          gridEffect: document.getElementById('grid-effect').value,
+          glow: parseInt(document.getElementById('mouse-glow').value) / 100
+        };
+      } else {
+        return {
+          ...base,
+          mode: 'world',
+          worldWidth: parseInt(document.getElementById('world-width').value),
+          platformCount: parseInt(document.getElementById('platform-count').value),
+          portalCount: parseInt(document.getElementById('portal-count').value),
+          particleCount: parseInt(document.getElementById('world-particles').value)
+        };
+      }
     }
 
     function generateEngineCode(config) {
-      const gridStyle = config.gridEffect === 'prominent'
-        ? "this.ctx.strokeStyle = 'rgba(255,255,255,0.08)'"
-        : "this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'";
-      
-      let code = ENGINE_CODE
-        .replace('{{PARTICLE_COUNT}}', config.particleCount)
-        .replace('{{PARTICLE_SIZE}}', config.particleSize)
-        .replace('{{PARTICLE_SIZE_MIN}}', config.particleSize / 2)
-        .replace('{{SPEED}}', config.speed)
-        .replace('{{BG_COLOR}}', config.bgColor)
-        .replace('{{GLOW_ALPHA}}', config.glow * 0.2)
-        .replace("this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'", gridStyle);
-
-      if (config.gridEffect === 'none') {
-        code = code.replace('{{GRID_CODE}}', '');
+      if (config.mode === 'particles') {
+        const gridStyle = config.gridEffect === 'prominent'
+          ? "this.ctx.strokeStyle = 'rgba(255,255,255,0.08)'"
+          : "this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'";
+        let code = ENGINE_CODE
+          .replace('{{PARTICLE_COUNT}}', config.particleCount)
+          .replace('{{PARTICLE_SIZE}}', config.particleSize)
+          .replace('{{PARTICLE_SIZE_MIN}}', config.particleSize / 2)
+          .replace('{{SPEED}}', config.speed)
+          .replace('{{BG_COLOR}}', config.bgColor)
+          .replace('{{GLOW_ALPHA}}', config.glow * 0.2)
+          .replace("this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'", gridStyle);
+        if (config.gridEffect === 'none') {
+          code = code.replace('{{GRID_CODE}}', '');
+        } else {
+          code = code.replace('{{GRID_CODE}}', 'this.drawGrid();');
+        }
+        return code;
       } else {
-        code = code.replace('{{GRID_CODE}}', 'this.drawGrid();');
+        let code = InteractiveWorld.toString();
+        const defaults = {
+          WORLD_WIDTH: config.worldWidth || 5000,
+          WORLD_PLATFORM_COUNT: config.platformCount || 10,
+          WORLD_PORTAL_COUNT: config.portalCount || 6,
+          WORLD_PARTICLE_COUNT: config.particleCount || 60,
+          DEFAULT_COLORS: config.colors || ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
+        };
+        code = 'const DEEPIRI_DEFAULTS = ' + JSON.stringify(defaults) + ';\n' + code;
+        return code;
       }
-
-      return code;
     }
 
     function initCanvas() {
@@ -608,11 +681,23 @@
 
     function startEngine() {
       if (engine) engine.stop();
-      engine = new InteractiveEngine.Engine(canvas, { interactive: true });
+      const mode = document.getElementById('mode-select').value;
+      if (mode === 'world') {
+        engine = new InteractiveWorld.WorldEngine(canvas, { interactive: true });
+        document.getElementById('status-text').textContent = 'World mode - WASD to move, Space to jump, Click/E to interact';
+      } else {
+        engine = new InteractiveEngine.Engine(canvas, { interactive: true });
+        document.getElementById('status-text').textContent = 'Running - Click on canvas to interact';
+      }
       engine.start();
       document.getElementById('status-dot').classList.remove('inactive');
-      document.getElementById('status-text').textContent = 'Running - Click on canvas to interact';
     }
+
+    document.getElementById('mode-select').addEventListener('change', (e) => {
+      currentMode = e.target.value;
+      toggleControls(currentMode);
+      startEngine();
+    });
 
     document.getElementById('particle-count').addEventListener('input', (e) => {
       document.getElementById('particle-count-val').textContent = e.target.value;
@@ -626,19 +711,42 @@
       document.getElementById('speed-val').textContent = e.target.value;
     });
 
+    document.getElementById('world-width').addEventListener('input', (e) => {
+      document.getElementById('world-width-val').textContent = e.target.value;
+    });
+
+    document.getElementById('platform-count').addEventListener('input', (e) => {
+      document.getElementById('platform-count-val').textContent = e.target.value;
+    });
+
+    document.getElementById('portal-count').addEventListener('input', (e) => {
+      document.getElementById('portal-count-val').textContent = e.target.value;
+    });
+
+    document.getElementById('world-particles').addEventListener('input', (e) => {
+      document.getElementById('world-particles-val').textContent = e.target.value;
+    });
+
     document.querySelectorAll('.export-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const format = btn.dataset.format;
         const config = getConfig();
-        
+
         canvas.width = parseInt(document.getElementById('canvas-width').value);
         canvas.height = parseInt(document.getElementById('canvas-height').value);
-        
-        const tempEngine = new InteractiveEngine.Engine(canvas, { interactive: true });
-        tempEngine.start();
-        
-        await new Promise(r => setTimeout(r, 500));
-        tempEngine.stop();
+
+        const mode = config.mode || 'particles';
+        if (mode === 'world') {
+          const worldEngine = new InteractiveWorld.WorldEngine(canvas, { interactive: true });
+          worldEngine.start();
+          await new Promise(r => setTimeout(r, 500));
+          worldEngine.stop();
+        } else {
+          const tempEngine = new InteractiveEngine.Engine(canvas, { interactive: true });
+          tempEngine.start();
+          await new Promise(r => setTimeout(r, 500));
+          tempEngine.stop();
+        }
 
         const engineCode = generateEngineCode(config);
         let blob, filename;
@@ -711,15 +819,28 @@
       const data = await player.loadFromFile(file);
 
       if (data && data.c) {
-        document.getElementById('particle-count').value = data.c.particleCount || 200;
-        document.getElementById('particle-size').value = data.c.particleSize || 6;
-        document.getElementById('speed').value = data.c.speed || 3;
-        document.getElementById('bg-color').value = data.c.bgColor || '#1a1a2e';
+        const mode = data.c.mode || 'particles';
+        document.getElementById('mode-select').value = mode;
+        toggleControls(mode);
+        if (mode === 'particles') {
+          document.getElementById('particle-count').value = data.c.particleCount || 200;
+          document.getElementById('particle-size').value = data.c.particleSize || 6;
+          document.getElementById('speed').value = data.c.speed || 3;
+          document.getElementById('bg-color').value = data.c.bgColor || '#1a1a2e';
+        }
       }
 
       player.start(data?.c || {});
     });
 
+    document.getElementById('canvas-width').addEventListener('change', () => {
+      initCanvas();
+    });
+    document.getElementById('canvas-height').addEventListener('change', () => {
+      initCanvas();
+    });
+
+    toggleControls('world');
     initCanvas();
     startEngine();
   </script>

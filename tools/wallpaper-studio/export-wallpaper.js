@@ -10,8 +10,62 @@ const WallpaperExporter = (() => {
     return new Blob([html], { type: 'text/html' });
   }
 
+  function generateWorldEngineSource(config) {
+    let source = '';
+    if (typeof InteractiveWorld !== 'undefined') {
+      source = InteractiveWorld.toString();
+    }
+    const defaults = {
+      WORLD_WIDTH: config.worldWidth || 5000,
+      WORLD_PLATFORM_COUNT: config.platformCount || 10,
+      WORLD_PORTAL_COUNT: config.portalCount || 6,
+      WORLD_PARTICLE_COUNT: config.particleCount || 60,
+      DEFAULT_COLORS: config.colors || ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
+    };
+    return 'const DEEPIRI_DEFAULTS = ' + JSON.stringify(defaults) + ';\n' + source;
+  }
+
   function generateWallpaperHTML(config, _fullscreen = true) {
     const c = config || {};
+    const mode = c.mode || 'particles';
+
+    if (mode === 'world') {
+      return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive World Wallpaper</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #0a0a1a;
+    }
+    canvas {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    #info {
+      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.3); font: 12px monospace; z-index: 1;
+      pointer-events: none; text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="bg"></canvas>
+  <div id="info">WASD/Arrows: Move | Space: Jump | E/Click: Interact</div>
+  <script>
+${generateWorldEngineSource(c)}
+const canvas = document.getElementById('bg');
+const engine = new InteractiveWorld.WorldEngine(canvas, { interactive: true });
+engine.start();
+  <\/script>
+</body>
+</html>`;
+    }
+
     return `<!DOCTYPE html>
 <html>
 <head>

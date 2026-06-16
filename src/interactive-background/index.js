@@ -3,8 +3,11 @@
  * 
  * Export all modules for easy importing
  */
+
+/* global InteractiveWorld */
 const DeepiriLyback = {
   Engine: InteractiveEngine,
+  WorldEngine: InteractiveWorld,
   Encoder: InteractiveEncoder,
   Player: InteractivePlayer,
   Bundler: WallpaperBundler,
