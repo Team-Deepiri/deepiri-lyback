@@ -1259,7 +1259,7 @@ const InteractiveWorld = (() => {
     }
 
     showInteraction(text, color) {
-      this.interactables.push({ text, color, life: 1, y: -50 });
+      this.interactables.push({ text, color, life: 1, y: 0 });
     }
 
     spawnBurst(x, y) {
@@ -1393,15 +1393,15 @@ const InteractiveWorld = (() => {
         ctx.fillStyle = `rgba(255,0,0,${this.player.deathFlash / 60})`;
         ctx.fillRect(0, 0, W, H);
       }
+      this.drawSurvivalHud(ctx, W);
+      this.drawHUD(ctx, W, H);
       this.drawInteractions(ctx, W, H);
-      this.drawHUD(ctx, W);
-      this.drawSurvivalHud(ctx);
       if (this.player.hasShovel) this.drawShovelHud(ctx, W, H);
       if (this.showMinimap) this.drawMinimap(ctx, W, H);
     }
 
     // Water meter (drains as you sweat) + a HOT warning near lava.
-    drawSurvivalHud(ctx) {
+    drawSurvivalHud(ctx, W) {
       const p = this.player;
       const x = 14, y = 14, bw = 150, bh = 14;
       ctx.save();
@@ -1420,22 +1420,25 @@ const InteractiveWorld = (() => {
         ctx.fillText('🔥 HOT', x + bw + 12, y + bh / 2 + 1);
       }
       ctx.restore();
+      // Leave room below the sweat bar for controls + proximity hints.
+      this._hudStackY = y + bh + 10;
     }
 
     drawShovelHud(ctx, W, H) {
       const p = this.player;
+      const bottomPad = 52;
       ctx.save();
       ctx.font = '12px system-ui, sans-serif';
       ctx.textBaseline = 'middle';
       const label = '🪏 F: dig · S+F: down';
       const tw = ctx.measureText(label).width + 18;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(12, H - 32, tw, 22);
+      ctx.fillRect(12, H - bottomPad, tw, 22);
       ctx.fillStyle = '#ffd479';
-      ctx.fillText(label, 21, H - 21);
+      ctx.fillText(label, 21, H - bottomPad + 11);
 
       // Shovel durability bar.
-      const bx = 12, by = H - 48, bw = 110, bh = 8;
+      const bx = 12, by = H - bottomPad - 18, bw = 110, bh = 8;
       const frac = Math.max(0, p.shovelDurability / p.maxShovelDurability);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
@@ -2060,22 +2063,28 @@ const InteractiveWorld = (() => {
     }
 
     drawInteractions(ctx, W, H) {
+      const baseY = H - 108;
       for (const ia of this.interactables) {
         ctx.globalAlpha = ia.life;
-        ctx.fillStyle = ia.color;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
         ctx.font = 'bold 16px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('✦ ' + ia.text + ' ✦', W / 2, H / 2 + ia.y);
+        const text = '✦ ' + ia.text + ' ✦';
+        const tw = ctx.measureText(text).width + 24;
+        const ty = baseY + ia.y;
+        ctx.fillRect(W / 2 - tw / 2, ty - 14, tw, 24);
+        ctx.fillStyle = ia.color;
+        ctx.fillText(text, W / 2, ty);
         ctx.globalAlpha = 1;
       }
     }
 
-    drawHUD(ctx, W) {
+    drawHUD(ctx, W, H) {
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
       ctx.font = '11px monospace';
       ctx.textAlign = 'left';
 
-      let hudY = 14;
+      let hudY = this._hudStackY || 14;
       const weatherIcon = this.weatherState === 'rain' ? '🌧' : this.weatherState === 'snow' ? '❄' : '☀';
       ctx.fillText(`${weatherIcon} WASD:Move Space:Jump E:Interact M:Map`, 14, hudY);
       hudY += 18;
