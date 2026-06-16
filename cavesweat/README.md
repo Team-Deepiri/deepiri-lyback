@@ -30,8 +30,10 @@ Edit **`world.json`** — every section maps directly to gameplay:
 |---------|------------------|
 | `world` | Map size, surface height |
 | `physics` | Gravity, jump force, move speed |
-| `entities` | Platforms, portals, creatures, chests, crystals, particles |
+| `entities` | Platforms, portals, creatures, chests, crystals, particles, shovels, sticks |
 | `caves` | Enable/disable caves, entrance count, tunnel size, sealed loot pockets, lava depth |
+| `heaven` | Cloud sky layer, freeze rate, ascent/cloud platform counts, trees |
+| `survival` | Run sweat multiplier, surface idle sweat, deep idle sweat |
 | `visuals` | Sky, ground, player color, palette |
 | `environment` | Biome, weather, time of day |
 
@@ -61,10 +63,19 @@ The engine lives in `../src/interactive-background/world-engine.js`. Cavesweat l
 ## Controls
 
 - **WASD / Arrows** — move
-- **Space** — jump (double jump in air)
+- **Space** — jump (double jump in air; wall jump when grabbing a cave wall)
 - **E** — interact with portals / chests
 - **F** — dig (pick up a shovel first)
+- **R** — hold to rub sticks together (need 2 sticks; 10 seconds starts a fire)
 - **M** — toggle minimap
+
+## Survival
+
+- **Sweat** — running makes you sweat more; standing still on the surface barely drains water; deep underground (near lava) heats you even when idle
+- **Heaven** — climb ascent platforms high enough to reach the cloud layer; the water bar becomes a freeze bar
+- **Sticks** — pick up sticks on the surface and in caves; hold **R** with 2+ sticks for 10 seconds to start a fire and thaw out
+- **Shovels** — scattered on the surface near cave entrances and inside cave chambers
+- **Wall kick** — in air, touch a cave wall to grab and slide; press **Space** to kick off and climb out
 
 ## Project layout
 

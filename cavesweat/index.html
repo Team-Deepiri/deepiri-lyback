@@ -44,6 +44,61 @@
       color: rgba(255,255,255,0.25); font: 12px system-ui, sans-serif;
       pointer-events: none;
     }
+    #settingsBtn {
+      position: fixed; top: 12px; right: 16px; z-index: 10;
+      display: none; width: 36px; height: 36px;
+      border: 1px solid rgba(78, 205, 196, 0.3);
+      border-radius: 8px; background: rgba(13, 13, 20, 0.75);
+      color: rgba(255,255,255,0.7); font-size: 1.1rem; cursor: pointer;
+      align-items: center; justify-content: center;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #settingsBtn:hover {
+      border-color: rgba(78, 205, 196, 0.55);
+      background: rgba(13, 13, 20, 0.92);
+      color: #4ecdc4;
+    }
+    #settingsBtn.visible { display: flex; }
+    #settingsPanel {
+      position: fixed; inset: 0; z-index: 15;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(7, 7, 13, 0.55);
+    }
+    #settingsPanel.open { display: flex; }
+    .settings-card {
+      border: 1px solid rgba(78, 205, 196, 0.25);
+      border-radius: 16px;
+      padding: 28px 32px;
+      background: rgba(13, 13, 20, 0.95);
+      min-width: 280px; max-width: 360px;
+      color: #e8e8f0; font-family: system-ui, sans-serif;
+    }
+    .settings-card h2 {
+      font-size: 1.1rem; font-weight: 600; margin-bottom: 4px;
+    }
+    .settings-card .sub {
+      color: rgba(255,255,255,0.45); font-size: 0.85rem;
+      margin-bottom: 20px; line-height: 1.4;
+    }
+    .settings-actions { display: flex; flex-direction: column; gap: 10px; }
+    .settings-actions button {
+      padding: 11px 18px; border-radius: 8px; font-size: 0.95rem;
+      font-weight: 600; cursor: pointer; border: none;
+    }
+    .settings-actions .reset-btn {
+      background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+      color: #fff;
+    }
+    .settings-actions .reset-btn:hover { opacity: 0.92; }
+    .settings-actions .close-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.65);
+    }
+    .settings-actions .close-btn:hover {
+      border-color: rgba(78, 205, 196, 0.4);
+      color: #4ecdc4;
+    }
   </style>
 </head>
 <body>
@@ -57,6 +112,17 @@
       <button id="playBtn" style="display:none" type="button">▶ Play</button>
     </div>
   </div>
+  <button id="settingsBtn" type="button" title="Settings" aria-label="Settings">⚙</button>
+  <div id="settingsPanel" role="dialog" aria-labelledby="settingsTitle" aria-modal="true">
+    <div class="settings-card">
+      <h2 id="settingsTitle">Settings</h2>
+      <p class="sub">In-game options for this Cavesweat session.</p>
+      <div class="settings-actions">
+        <button id="resetBtn" class="reset-btn" type="button">↻ Reset world</button>
+        <button id="closeSettingsBtn" class="close-btn" type="button">Close</button>
+      </div>
+    </div>
+  </div>
   <div id="hud">
     WASD / Arrows: Move &nbsp;|&nbsp; Space: Jump &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; M: Minimap
   </div>
@@ -68,8 +134,26 @@
     const descEl = document.getElementById('desc');
     const playBtn = document.getElementById('playBtn');
     const titleEl = document.getElementById('title');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const resetBtn = document.getElementById('resetBtn');
+    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     let engine = null;
     let pendingRuntime = null;
+
+    function openSettings() {
+      settingsPanel.classList.add('open');
+    }
+
+    function closeSettings() {
+      settingsPanel.classList.remove('open');
+    }
+
+    function resetGame() {
+      if (!pendingRuntime) return;
+      closeSettings();
+      startGame(pendingRuntime);
+    }
 
     async function loadWorldConfig() {
       const params = new URLSearchParams(location.search);
@@ -100,6 +184,7 @@
         engine.start();
         titleEl.textContent = runtime.meta.name;
         overlay.classList.add('hide');
+        settingsBtn.classList.add('visible');
       }).catch((e) => {
         errEl.textContent = e.message;
       });
@@ -127,6 +212,16 @@
 
     playBtn.addEventListener('click', () => {
       if (pendingRuntime) startGame(pendingRuntime);
+    });
+
+    settingsBtn.addEventListener('click', openSettings);
+    closeSettingsBtn.addEventListener('click', closeSettings);
+    resetBtn.addEventListener('click', resetGame);
+    settingsPanel.addEventListener('click', (e) => {
+      if (e.target === settingsPanel) closeSettings();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && settingsPanel.classList.contains('open')) closeSettings();
     });
 
     boot();

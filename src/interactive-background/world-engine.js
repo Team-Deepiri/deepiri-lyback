@@ -9,6 +9,10 @@ const InteractiveWorld = (() => {
     JUMP_FORCE: DEFAULTS.WORLD_JUMP_FORCE ?? -11,
     MOVE_SPEED: DEFAULTS.WORLD_MOVE_SPEED ?? 4.5,
     MAX_FALL_SPEED: 14,
+    WALL_KICK_SPEED: 6.5,
+    WALL_SLIDE_SPEED: 2.8,
+    WALL_GRAB_FRAMES: 40,
+    WALL_JUMP_IGNORE_FRAMES: 12,
     PLAYER_W: 18,
     PLAYER_H: 28,
     PLATFORM_COUNT: DEFAULTS.WORLD_PLATFORM_COUNT || 10,
@@ -22,7 +26,21 @@ const InteractiveWorld = (() => {
     SKY_BOTTOM: DEFAULTS.WORLD_SKY_BOTTOM || '#1a2a3e',
     GROUND_TOP: DEFAULTS.WORLD_GROUND_TOP || '#3a7d5a',
     GROUND_BOTTOM: DEFAULTS.WORLD_GROUND_BOTTOM || '#1a0a0a',
-    PLAYER_COLOR: DEFAULTS.WORLD_PLAYER_COLOR || '#4ecdc4'
+    PLAYER_COLOR: DEFAULTS.WORLD_PLAYER_COLOR || '#4ecdc4',
+    HEAVEN_ENABLED: DEFAULTS.WORLD_HEAVEN_ENABLED === true,
+    HEAVEN_ALTITUDE: DEFAULTS.WORLD_HEAVEN_ALTITUDE ?? 280,
+    HEAVEN_ASCENT_PLATFORMS: DEFAULTS.WORLD_HEAVEN_ASCENT_PLATFORMS ?? 28,
+    HEAVEN_CLOUD_PLATFORMS: DEFAULTS.WORLD_HEAVEN_CLOUD_PLATFORMS ?? 14,
+    HEAVEN_TREES: DEFAULTS.WORLD_HEAVEN_TREES ?? 10,
+    HEAVEN_FREEZE_RATE: DEFAULTS.WORLD_HEAVEN_FREEZE_RATE ?? 0.12,
+    SURVIVAL_RUN_SWEAT_MULT: DEFAULTS.WORLD_SURVIVAL_RUN_SWEAT_MULT ?? 1.8,
+    SURVIVAL_SURFACE_IDLE_SWEAT: DEFAULTS.WORLD_SURVIVAL_SURFACE_IDLE_SWEAT ?? 0.015,
+    SURVIVAL_IDLE_DEEP_MULT: DEFAULTS.WORLD_SURVIVAL_IDLE_DEEP_MULT ?? 0.65,
+    SHOVELS_SURFACE: DEFAULTS.WORLD_SHOVELS_SURFACE ?? 12,
+    SHOVELS_CAVE: DEFAULTS.WORLD_SHOVELS_CAVE ?? 8,
+    STICKS_SURFACE: DEFAULTS.WORLD_STICKS_SURFACE ?? 16,
+    STICKS_CAVE: DEFAULTS.WORLD_STICKS_CAVE ?? 12,
+    RUB_FRAMES: 600
   };
 
   const SEGMENTS = 250;
@@ -69,9 +87,73 @@ const InteractiveWorld = (() => {
         a++;
       } while (a < 30 && y > CFG.WORLD_HEIGHT - 100);
       const biome = getBiome(x);
-      platforms.push({ x, y, w, h: 12, color: biome.accent });
+      platforms.push({ x, y, w, h: 12, color: biome.accent, kind: 'solid' });
     }
     return platforms;
+  }
+
+  // Stepping-stone platforms between ground and the heaven cloud layer.
+  function generateAscentPlatforms(heights, entrances) {
+    if (!CFG.HEAVEN_ENABLED) return [];
+    const platforms = [];
+    const count = CFG.HEAVEN_ASCENT_PLATFORMS;
+    const clusters = Math.max(3, Math.floor(count / 5));
+    for (let c = 0; c < clusters; c++) {
+      const baseX = entrances && entrances.length
+        ? entrances[c % entrances.length] + (Math.random() - 0.5) * 220
+        : 300 + (c / clusters) * (CFG.WORLD_WIDTH - 600) + (Math.random() - 0.5) * 200;
+      const surf = getTerrainY(heights, baseX);
+      const heavenY = surf - CFG.HEAVEN_ALTITUDE;
+      const perCluster = Math.ceil(count / clusters);
+      let px = baseX, py = surf - 70;
+      for (let i = 0; i < perCluster && platforms.length < count; i++) {
+        px += (Math.random() - 0.3) * 90;
+        py -= 35 + Math.random() * 45;
+        if (py < heavenY + 20) py = heavenY + 20 + Math.random() * 40;
+        const biome = getBiome(px);
+        platforms.push({
+          x: px, y: py, w: 65 + Math.random() * 55, h: 12,
+          color: biome.accent, kind: 'solid'
+        });
+      }
+    }
+    return platforms;
+  }
+
+  // Soft cloud platforms in the heaven zone — only reachable after climbing ascent tier.
+  function generateCloudPlatforms(heights) {
+    if (!CFG.HEAVEN_ENABLED) return [];
+    const platforms = [];
+    for (let i = 0; i < CFG.HEAVEN_CLOUD_PLATFORMS; i++) {
+      const x = 200 + Math.random() * (CFG.WORLD_WIDTH - 400);
+      const surf = getTerrainY(heights, x);
+      const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
+      const y = heavenLine - 20 - Math.random() * 120;
+      platforms.push({
+        x, y, w: 100 + Math.random() * 60, h: 14,
+        color: 'rgba(255,255,255,0.85)', kind: 'cloud',
+        bob: Math.random() * Math.PI * 2, bobAmp: 2 + Math.random() * 3
+      });
+    }
+    return platforms;
+  }
+
+  // Tall trees rooted near surface with canopies piercing through the heaven layer.
+  function generateHeavenTrees(heights) {
+    if (!CFG.HEAVEN_ENABLED) return [];
+    const trees = [];
+    for (let i = 0; i < CFG.HEAVEN_TREES; i++) {
+      const x = 150 + Math.random() * (CFG.WORLD_WIDTH - 300);
+      const surf = getTerrainY(heights, x);
+      const height = CFG.HEAVEN_ALTITUDE + 60 + Math.random() * 80;
+      trees.push({
+        x, baseY: surf, topY: surf - height,
+        trunkW: 8 + Math.random() * 6,
+        canopyR: 22 + Math.random() * 18,
+        color: getBiome(x).ground
+      });
+    }
+    return trees;
   }
 
   function generatePortals(heights) {
@@ -282,16 +364,94 @@ const InteractiveWorld = (() => {
     return { tunnels, chambers, pockets, entrances, lavaY, digHoles: [] };
   }
 
-  // Shovel pickups on the surface — grab one to unlock digging.
-  function generateShovels(heights) {
+  // Shovel pickups on the surface and in caves.
+  function generateShovels(heights, entrances) {
     const shovels = [];
     const W = CFG.WORLD_WIDTH;
-    const n = 3;
+    const n = CFG.SHOVELS_SURFACE;
+    const spots = [];
+    if (entrances && entrances.length) {
+      for (const ex of entrances) spots.push(ex + (Math.random() - 0.5) * 80);
+    }
+    while (spots.length < n) {
+      spots.push(W * (0.08 + Math.random() * 0.84));
+    }
     for (let i = 0; i < n; i++) {
-      const x = W * (0.12 + 0.38 * i) + (Math.random() - 0.5) * 180;
-      shovels.push({ x, y: getTerrainY(heights, x) - 16, taken: false, bob: Math.random() * Math.PI * 2 });
+      const x = spots[i % spots.length] + (i > 0 ? (Math.random() - 0.5) * 120 : 0);
+      shovels.push({
+        x, y: getTerrainY(heights, x) - 16, taken: false,
+        bob: Math.random() * Math.PI * 2, kind: 'surface'
+      });
     }
     return shovels;
+  }
+
+  function generateCaveShovels(caves, heights) {
+    const shovels = [];
+    if (!caves) return shovels;
+    let placed = 0;
+    const target = CFG.SHOVELS_CAVE;
+    for (const c of caves.chambers) {
+      if (placed >= target) break;
+      if (Math.random() > 0.3) continue;
+      shovels.push({
+        x: c.x + (Math.random() - 0.5) * c.r * 0.6,
+        y: c.y + c.r * 0.4,
+        taken: false, bob: Math.random() * Math.PI * 2, kind: 'cave'
+      });
+      placed++;
+    }
+    for (const p of (caves.pockets || [])) {
+      if (placed >= target) break;
+      shovels.push({
+        x: p.x, y: p.y + p.r * 0.35,
+        taken: false, bob: Math.random() * Math.PI * 2, kind: 'cave'
+      });
+      placed++;
+    }
+    return shovels;
+  }
+
+  function generateSticks(heights, entrances) {
+    const sticks = [];
+    const n = CFG.STICKS_SURFACE;
+    for (let i = 0; i < n; i++) {
+      const x = entrances && entrances.length
+        ? entrances[i % entrances.length] + (Math.random() - 0.5) * 200
+        : 100 + Math.random() * (CFG.WORLD_WIDTH - 200);
+      sticks.push({
+        x, y: getTerrainY(heights, x) - 12,
+        taken: false, bob: Math.random() * Math.PI * 2, kind: 'surface'
+      });
+    }
+    return sticks;
+  }
+
+  function generateCaveSticks(caves) {
+    const sticks = [];
+    if (!caves) return sticks;
+    let placed = 0;
+    const target = CFG.STICKS_CAVE;
+    for (const c of caves.chambers) {
+      if (placed >= target) break;
+      if (Math.random() > 0.45) continue;
+      sticks.push({
+        x: c.x + (Math.random() - 0.5) * c.r * 0.5,
+        y: c.y + c.r * 0.35,
+        taken: false, bob: Math.random() * Math.PI * 2, kind: 'cave'
+      });
+      placed++;
+    }
+    for (const p of (caves.pockets || [])) {
+      if (placed >= target) break;
+      sticks.push({
+        x: p.x + (Math.random() - 0.5) * p.r * 0.4,
+        y: p.y + p.r * 0.3,
+        taken: false, bob: Math.random() * Math.PI * 2, kind: 'cave'
+      });
+      placed++;
+    }
+    return sticks;
   }
 
   function segDistSq(px, py, ax, ay, bx, by) {
@@ -337,12 +497,48 @@ const InteractiveWorld = (() => {
     return true;
   }
 
+  // Probe along the player's side for cave/rock walls (used for wall grab & kick).
+  function touchesWall(caves, heights, x, y, w, h, side) {
+    const probeX = side < 0 ? x - 1 : x + w + 1;
+    for (let oy = 6; oy < h - 2; oy += 7) {
+      if (isRockAt(caves, heights, probeX, y + oy)) return true;
+    }
+    return false;
+  }
+
   const DIG_CELL = 16;
 
   // Grid cell for dig progress — keyed by cell, not exact point, so running
   // alongside F does not reset chips on every frame.
   function digCellKey(fx, fy, cell = DIG_CELL) {
     return { cellX: Math.floor(fx / cell), cellY: Math.floor(fy / cell) };
+  }
+
+  function inHeavenZone(playerY, playerH, surf, heavenEnabled, altitude) {
+    if (!heavenEnabled) return false;
+    return (playerY + playerH / 2) < surf - altitude;
+  }
+
+  // Sweat drain rate from depth heat + movement. Returns positive = drain water.
+  function computeSweatRate(baseHeat, depth, isMoving, onGround, inLava) {
+    if (inLava) return 1.5 * 0.11;
+    if (baseHeat <= 0.12) {
+      if (depth <= 0 && !isMoving) return CFG.SURVIVAL_SURFACE_IDLE_SWEAT;
+      if (depth <= 0) return CFG.SURVIVAL_SURFACE_IDLE_SWEAT * 1.5;
+      return baseHeat * CFG.SURVIVAL_IDLE_DEEP_MULT * 0.11;
+    }
+    let rate = baseHeat * 0.11;
+    if (isMoving && onGround) rate *= CFG.SURVIVAL_RUN_SWEAT_MULT;
+    else if (!isMoving && depth > 0) rate *= CFG.SURVIVAL_IDLE_DEEP_MULT;
+    else if (depth <= 0 && !isMoving) rate = CFG.SURVIVAL_SURFACE_IDLE_SWEAT;
+    return rate;
+  }
+
+  function platformY(plat, time) {
+    if (plat.kind === 'cloud') {
+      return plat.y + Math.sin(time * 0.02 + plat.bob) * plat.bobAmp;
+    }
+    return plat.y;
   }
 
   // Dig materials. `hardness` = chips needed to break through a spot AND the
@@ -691,34 +887,59 @@ const InteractiveWorld = (() => {
       this.shovelDurability = 0;
       this.maxWater = 100;
       this.water = 100;
+      this.maxFreeze = 100;
+      this.freeze = 0;
+      this.sticks = 0;
       this.deathFlash = 0;
+      this.wallSide = 0;
+      this.wallGrabTimer = 0;
+      this._wallJumpIgnore = 0;
     }
 
-    update(keys, heights, platforms, portals, chests, caves) {
-      const moveX = (keys.left || keys.a) ? -1 : (keys.right || keys.d) ? 1 : 0;
+    update(keys, heights, platforms, portals, chests, caves, time) {
+      const rubbing = keys.r && this.sticks >= 2;
+      const moveX = rubbing ? 0 : ((keys.left || keys.a) ? -1 : (keys.right || keys.d) ? 1 : 0);
+
+      if (this._wallJumpIgnore > 0) this._wallJumpIgnore--;
+
+      const jumpKey = keys.up || keys.w || keys.space;
+      if (jumpKey && !keys._jumpHeld) {
+        if (this.wallSide !== 0) {
+          // Kick off the wall — horizontal boost away + upward hop.
+          this.vy = CFG.JUMP_FORCE * 0.92;
+          this.vx = -this.wallSide * CFG.WALL_KICK_SPEED;
+          this.facing = -this.wallSide;
+          this._wallJumpIgnore = CFG.WALL_JUMP_IGNORE_FRAMES;
+          this.wallSide = 0;
+          this.wallGrabTimer = 0;
+          this.onGround = false;
+          this.canDoubleJump = true;
+          keys._jumpHeld = true;
+        } else if (this.onGround) {
+          this.vy = CFG.JUMP_FORCE;
+          this.onGround = false;
+          this.canDoubleJump = true;
+          keys._jumpHeld = true;
+        } else if (this.canDoubleJump) {
+          this.vy = CFG.JUMP_FORCE * 0.85;
+          this.canDoubleJump = false;
+          keys._jumpHeld = true;
+        }
+      }
+      if (!jumpKey) keys._jumpHeld = false;
+
       if (moveX !== 0) {
         this.vx = moveX * CFG.MOVE_SPEED;
         this.facing = moveX > 0 ? 1 : -1;
         this.isMoving = true;
-      } else {
-        this.vx *= 0.75;
+      } else if (this.wallSide === 0) {
+        this.vx *= rubbing ? 0.3 : 0.75;
         if (Math.abs(this.vx) < 0.2) this.vx = 0;
         this.isMoving = false;
+      } else {
+        this.vx = 0;
+        this.isMoving = false;
       }
-
-      const jumpKey = keys.up || keys.w || keys.space;
-      if (jumpKey && !keys._jumpHeld) {
-        if (this.onGround) {
-          this.vy = CFG.JUMP_FORCE;
-          this.onGround = false;
-          this.canDoubleJump = true;
-        } else if (this.canDoubleJump) {
-          this.vy = CFG.JUMP_FORCE * 0.85;
-          this.canDoubleJump = false;
-        }
-        keys._jumpHeld = true;
-      }
-      if (!jumpKey) keys._jumpHeld = false;
 
       this.vy += CFG.GRAVITY;
       if (this.vy > CFG.MAX_FALL_SPEED) this.vy = CFG.MAX_FALL_SPEED;
@@ -733,10 +954,12 @@ const InteractiveWorld = (() => {
         let g = 0;
         while (isRockAt(caves, heights, this.x + this.w, midY) && g++ < 48) this.x -= 1;
         this.vx = 0;
+        if (!this.onGround && this._wallJumpIgnore === 0) this.wallSide = 1;
       } else if (this.vx < 0 && isRockAt(caves, heights, this.x, midY)) {
         let g = 0;
         while (isRockAt(caves, heights, this.x, midY) && g++ < 48) this.x += 1;
         this.vx = 0;
+        if (!this.onGround && this._wallJumpIgnore === 0) this.wallSide = -1;
       }
 
       // --- vertical move + surface/cave floor & ceiling resolution ---
@@ -752,6 +975,8 @@ const InteractiveWorld = (() => {
           this.vy = 0;
           this.onGround = true;
           this.canDoubleJump = true;
+          this.wallSide = 0;
+          this.wallGrabTimer = 0;
           if (!this.wasOnGround) this.landDust = 8;
         }
       } else if (isRockAt(caves, heights, cxp, this.y)) {
@@ -761,15 +986,45 @@ const InteractiveWorld = (() => {
       }
 
       for (const plat of platforms) {
+        const py = platformY(plat, time || 0);
         if (this.x + this.w > plat.x && this.x < plat.x + plat.w &&
-            this.y + this.h > plat.y && this.y + this.h < plat.y + plat.h + this.vy + 2 &&
+            this.y + this.h > py && this.y + this.h < py + plat.h + this.vy + 2 &&
             this.vy >= 0) {
-          this.y = plat.y - this.h;
+          this.y = py - this.h;
           this.vy = 0;
           this.onGround = true;
           this.canDoubleJump = true;
+          this.wallSide = 0;
+          this.wallGrabTimer = 0;
           if (!this.wasOnGround) this.landDust = 6;
         }
+      }
+
+      // Wall grab & slide — stick to cave walls in air, then jump to kick off.
+      if (!this.onGround && this._wallJumpIgnore === 0) {
+        const touchL = touchesWall(caves, heights, this.x, this.y, this.w, this.h, -1);
+        const touchR = touchesWall(caves, heights, this.x, this.y, this.w, this.h, 1);
+        if (touchL && !touchR) this.wallSide = -1;
+        else if (touchR && !touchL) this.wallSide = 1;
+        else if (touchL && touchR) this.wallSide = moveX !== 0 ? moveX : this.facing;
+        else if (!touchL && !touchR) this.wallSide = 0;
+      }
+
+      if (this.wallSide !== 0 && !this.onGround) {
+        this.wallGrabTimer++;
+        const holdToward = (this.wallSide < 0 && (keys.left || keys.a)) ||
+                           (this.wallSide > 0 && (keys.right || keys.d));
+        if (holdToward || this.wallGrabTimer <= CFG.WALL_GRAB_FRAMES) {
+          this.vy = Math.min(this.vy, CFG.WALL_SLIDE_SPEED);
+          this.vx = 0;
+          this.facing = this.wallSide;
+        } else {
+          this.wallSide = 0;
+          this.wallGrabTimer = 0;
+        }
+      } else if (this.onGround) {
+        this.wallSide = 0;
+        this.wallGrabTimer = 0;
       }
 
       if (this.x < 0) { this.x = 0; this.vx = 0; }
@@ -813,6 +1068,11 @@ const InteractiveWorld = (() => {
       ctx.save();
       const bodyColor = playerColor || '#4ecdc4';
       const darkBodyColor = playerColor ? this.shadeColor(playerColor, -0.4) : '#2d1b4e';
+
+      // Lean into the wall while grabbing.
+      if (this.wallSide !== 0 && !this.onGround) {
+        ctx.translate(this.wallSide * 2, 0);
+      }
 
       if (this.landDust > 0) {
         ctx.fillStyle = `rgba(200, 180, 150, ${this.landDust / 12})`;
@@ -969,12 +1229,21 @@ const InteractiveWorld = (() => {
     init() {
       this.resize();
       this.terrain = generateTerrain(CFG.WORLD_WIDTH);
-      this.platforms = generatePlatforms(this.terrain);
+      this.caves = generateCaves(this.terrain);
+      const basePlatforms = generatePlatforms(this.terrain);
+      const ascentPlatforms = generateAscentPlatforms(this.terrain, this.caves.entrances);
+      const cloudPlatforms = generateCloudPlatforms(this.terrain);
+      this.platforms = basePlatforms.concat(ascentPlatforms, cloudPlatforms);
+      this.heavenTrees = generateHeavenTrees(this.terrain);
       this.portals = generatePortals(this.terrain);
       this.chests = generateChests(this.terrain);
       this.crystals = generateCrystals(this.terrain);
-      this.caves = generateCaves(this.terrain);
-      this.shovels = generateShovels(this.terrain);
+      this.shovels = generateShovels(this.terrain, this.caves.entrances)
+        .concat(generateCaveShovels(this.caves, this.terrain));
+      this.stickPickups = generateSticks(this.terrain, this.caves.entrances)
+        .concat(generateCaveSticks(this.caves));
+      this.fires = [];
+      this._rubProgress = 0;
       this.heat = 0;
       this._digTarget = null;
       this.buildCaveItems();
@@ -1037,6 +1306,7 @@ const InteractiveWorld = (() => {
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = true;
         else if (key === 'f') { e.preventDefault(); this.keys.f = true; }
+        else if (key === 'r') { e.preventDefault(); this.keys.r = true; }
         else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'e' || key === 'm') {
           if (key === 'e') this.interactWithPortal();
           else if (key === 'm') this.showMinimap = !this.showMinimap;
@@ -1046,7 +1316,7 @@ const InteractiveWorld = (() => {
       document.addEventListener('keyup', (e) => {
         const key = e.key.toLowerCase();
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = false;
-        else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'f') this.keys[key === ' ' ? 'space' : key] = false;
+        else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'f' || key === 'r') this.keys[key === ' ' ? 'space' : key] = false;
       });
       this.canvas.addEventListener('click', (e) => {
         const rect = this.canvas.getBoundingClientRect();
@@ -1161,7 +1431,7 @@ const InteractiveWorld = (() => {
     }
 
     // Heat rises with depth: the player sweats out water, lava scorches, and
-    // running dry sends them back to the surface. Buckets refill; chests open.
+    // running dry sends them back to the surface. In heaven, freeze replaces sweat.
     updateSurvival() {
       const p = this.player;
       const cxp = p.x + p.w / 2;
@@ -1178,14 +1448,35 @@ const InteractiveWorld = (() => {
       }
       this.heat = Math.min(1, heat);
 
-      if (heat > 0.12) {
-        p.water -= heat * 0.11;
-        if (Math.random() < heat * 0.3) this.spawnSweat();
-      } else if (p.water < p.maxWater) {
-        p.water += 0.05;
+      const heaven = inHeavenZone(p.y, p.h, surf, CFG.HEAVEN_ENABLED, CFG.HEAVEN_ALTITUDE);
+      this.inHeaven = heaven;
+
+      if (heaven) {
+        let freezeRate = CFG.HEAVEN_FREEZE_RATE;
+        for (const f of this.fires) {
+          const dx = cxp - f.x, dy = (p.y + p.h / 2) - f.y;
+          if (dx * dx + dy * dy < 60 * 60) {
+            freezeRate *= 0.5;
+            p.freeze = Math.max(0, p.freeze - 0.08);
+          }
+        }
+        if (!(this.keys.r && p.sticks >= 2)) {
+          p.freeze += freezeRate;
+        }
+        p.freeze = Math.max(0, Math.min(p.maxFreeze, p.freeze));
+        if (p.freeze >= p.maxFreeze) this.killPlayer('freeze');
+      } else {
+        if (p.freeze > 0) p.freeze = Math.max(0, p.freeze - 0.04);
+        const sweatRate = computeSweatRate(heat, depth, p.isMoving, p.onGround, inLava);
+        if (sweatRate > 0.02) {
+          p.water -= sweatRate;
+          if (Math.random() < heat * 0.3) this.spawnSweat();
+        } else if (p.water < p.maxWater) {
+          p.water += 0.05 - sweatRate;
+        }
+        p.water = Math.max(0, Math.min(p.maxWater, p.water));
+        if (p.water <= 0) this.killPlayer('dehydrate');
       }
-      p.water = Math.max(0, Math.min(p.maxWater, p.water));
-      if (p.water <= 0) this.killPlayer();
 
       for (const b of this.buckets) {
         b.bob += 0.05;
@@ -1209,14 +1500,19 @@ const InteractiveWorld = (() => {
       if (p.deathFlash > 0) p.deathFlash--;
     }
 
-    killPlayer() {
+    killPlayer(reason) {
       const p = this.player;
       p.x = 100;
       p.y = getTerrainY(this.terrain, 100) - p.h - 5;
       p.vx = 0; p.vy = 0;
       p.water = p.maxWater;
+      p.freeze = 0;
       p.deathFlash = 30;
-      this.showInteraction('💀 Dehydrated — back to the surface', '#ff6b6b');
+      if (reason === 'freeze') {
+        this.showInteraction('❄️ Frozen solid — back to the surface', '#a8d8ff');
+      } else {
+        this.showInteraction('💀 Dehydrated — back to the surface', '#ff6b6b');
+      }
     }
 
     spawnSweat() {
@@ -1241,6 +1537,24 @@ const InteractiveWorld = (() => {
       pt.size = 1.5 + Math.random() * 2;
       pt.color = Math.random() < 0.5 ? '#ff8b3a' : '#ffd479';
       this.particles.push(pt);
+    }
+
+    // Hold R with 2+ sticks for 10 seconds to start a fire and thaw freeze.
+    updateRubbing() {
+      const p = this.player;
+      if (this.keys.r && p.sticks >= 2) {
+        this._rubProgress++;
+        if (this._rubProgress >= CFG.RUB_FRAMES) {
+          this._rubProgress = 0;
+          const fx = p.x + p.w / 2;
+          const fy = p.y + p.h;
+          this.fires.push({ x: fx, y: fy, life: 1800 });
+          p.freeze = Math.max(0, p.freeze - 50);
+          this.showInteraction('🔥 Fire started!', '#ff8b3a');
+        }
+      } else {
+        this._rubProgress = 0;
+      }
     }
 
     activatePortal(portal) {
@@ -1281,7 +1595,7 @@ const InteractiveWorld = (() => {
       // Computer mode: the player sits at the terminal and types — freeze
       // world movement, grow the monitor, and run the typing animation.
       if (this.computerMode) {
-        this.keys.left = this.keys.right = this.keys.a = this.keys.d = this.keys.f = false;
+        this.keys.left = this.keys.right = this.keys.a = this.keys.d = this.keys.f = this.keys.r = false;
         this.keys.up = this.keys.w = this.keys.space = false;
         this.player.isTyping = true;
         this.player.typeFrame = (this.player.typeFrame || 0) + 0.35;
@@ -1291,16 +1605,18 @@ const InteractiveWorld = (() => {
         this.computerGrow = Math.max(0, this.computerGrow - 0.1);
       }
 
-      this.player.update(this.keys, this.terrain, this.platforms, this.portals, this.chests, this.caves);
+      this.player.update(this.keys, this.terrain, this.platforms, this.portals, this.chests, this.caves, this.time);
       if (this.keys.f) this.digAt();
+      this.updateRubbing();
       this.updateSurvival();
 
+      const camMinY = CFG.HEAVEN_ENABLED ? -CFG.HEAVEN_ALTITUDE * 0.3 : 0;
       const tCX = this.player.x + this.player.w / 2 - this.canvas.width * 0.35;
       const tCY = this.player.y + this.player.h / 2 - this.canvas.height * 0.5;
       this.cameraX += (tCX - this.cameraX) * 0.08;
       this.cameraY += (tCY - this.cameraY) * 0.08;
       this.cameraX = Math.max(0, Math.min(this.cameraX, CFG.WORLD_WIDTH - this.canvas.width));
-      this.cameraY = Math.max(0, Math.min(this.cameraY, CFG.WORLD_HEIGHT - this.canvas.height));
+      this.cameraY = Math.max(camMinY, Math.min(this.cameraY, CFG.WORLD_HEIGHT - this.canvas.height));
 
       this.timeOfDay += 0.0003;
       if (this.timeOfDay > 1) this.timeOfDay -= 1;
@@ -1341,6 +1657,29 @@ const InteractiveWorld = (() => {
           }
         }
       }
+
+      // Stick pickups.
+      if (this.stickPickups) {
+        const pcx = this.player.x + this.player.w / 2;
+        const pcy = this.player.y + this.player.h / 2;
+        for (const s of this.stickPickups) {
+          s.bob += 0.05;
+          if (!s.taken) {
+            const dx = pcx - s.x, dy = pcy - s.y;
+            if (dx * dx + dy * dy < 22 * 22) {
+              s.taken = true;
+              this.player.sticks++;
+              this.showInteraction('🪵 Stick (' + this.player.sticks + ')', '#c49040');
+            }
+          }
+        }
+      }
+
+      // Fires tick down.
+      for (let i = this.fires.length - 1; i >= 0; i--) {
+        this.fires[i].life--;
+        if (this.fires[i].life <= 0) this.fires.splice(i, 1);
+      }
       for (const p of this.particles) p.update();
       if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
       const daylight = Math.max(0, 1 - Math.abs(this.timeOfDay - 0.5) * 2.5);
@@ -1369,24 +1708,34 @@ const InteractiveWorld = (() => {
       const cy = this.cameraY;
 
       this.drawSky(ctx, W, H, cx, cy);
+      this.drawHeavenClouds(ctx, cx, cy, W, H);
       this.drawBgMountains(ctx, cx, cy, W, H);
+      this.drawHeavenTrees(ctx, cx, cy, W, H);
       this.drawTerrain(ctx, cx, cy, W, H);
       this.drawCaves(ctx, cx, cy, W, H);
       this.drawCaveItems(ctx, cx, cy, W, H);
       this.drawPlatforms(ctx, cx, cy, W, H);
       this.drawCrystals(ctx, cx, cy, W, H);
       this.drawChests(ctx, cx, cy, W, H);
+      this.drawSticks(ctx, cx, cy, W, H);
       this.drawShovels(ctx, cx, cy, W, H);
+      this.drawFires(ctx, cx, cy, W, H);
       this.drawPortals(ctx, cx, cy, W, H);
       this.drawCreatures(ctx, cx, cy, W, H);
       this.player.draw(ctx, cx, cy, this._playerColor);
       this.drawDigTarget(ctx, cx, cy);
+      this.drawRubProgress(ctx, cx, cy);
       if (this.computerGrow > 0.01) this.drawComputer(ctx, cx, cy);
       this.drawParticles(ctx, cx, cy, W, H);
       this.drawWeather(ctx, cx, cy, W, H);
       // Heat haze: the deeper/hotter it gets, the redder the screen.
-      if (this.heat > 0.25) {
+      if (this.heat > 0.25 && !this.inHeaven) {
         ctx.fillStyle = `rgba(255,60,0,${(this.heat - 0.25) * 0.28})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+      // Cold haze in heaven when freezing.
+      if (this.inHeaven && this.player.freeze > 30) {
+        ctx.fillStyle = `rgba(160,220,255,${(this.player.freeze / 100) * 0.2})`;
         ctx.fillRect(0, 0, W, H);
       }
       if (this.player.deathFlash > 0) {
@@ -1400,27 +1749,45 @@ const InteractiveWorld = (() => {
       if (this.showMinimap) this.drawMinimap(ctx, W, H);
     }
 
-    // Water meter (drains as you sweat) + a HOT warning near lava.
+    // Water meter (drains as you sweat) or freeze bar in heaven.
     drawSurvivalHud(ctx, W) {
       const p = this.player;
       const x = 14, y = 14, bw = 150, bh = 14;
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
-      const frac = p.water / p.maxWater;
-      const low = frac < 0.3;
-      ctx.fillStyle = low ? '#ff5a4a' : '#45b7d1';
-      ctx.fillRect(x, y, bw * frac, bh);
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.font = '11px system-ui, sans-serif';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('💧 ' + Math.ceil(p.water), x + 6, y + bh / 2 + 1);
-      if (this.heat > 0.55) {
-        ctx.fillStyle = '#ff8b3a';
-        ctx.fillText('🔥 HOT', x + bw + 12, y + bh / 2 + 1);
+      if (this.inHeaven) {
+        const frac = p.freeze / p.maxFreeze;
+        const cold = frac > 0.7;
+        ctx.fillStyle = cold ? '#4a9eff' : '#a8d8ff';
+        ctx.fillRect(x, y, bw * frac, bh);
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('❄️ ' + Math.ceil(p.freeze), x + 6, y + bh / 2 + 1);
+        if (p.sticks >= 2) {
+          ctx.fillStyle = '#c49040';
+          ctx.fillText('R: rub sticks', x + bw + 12, y + bh / 2 + 1);
+        }
+      } else {
+        const frac = p.water / p.maxWater;
+        const low = frac < 0.3;
+        ctx.fillStyle = low ? '#ff5a4a' : '#45b7d1';
+        ctx.fillRect(x, y, bw * frac, bh);
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💧 ' + Math.ceil(p.water), x + 6, y + bh / 2 + 1);
+        if (this.heat > 0.55) {
+          ctx.fillStyle = '#ff8b3a';
+          ctx.fillText('🔥 HOT', x + bw + 12, y + bh / 2 + 1);
+        }
+        if (p.sticks >= 2) {
+          ctx.fillStyle = '#c49040';
+          ctx.fillText('🪵×' + p.sticks, x + bw + 12, y + bh / 2 + 1);
+        }
       }
       ctx.restore();
-      // Leave room below the sweat bar for controls + proximity hints.
       this._hudStackY = y + bh + 10;
     }
 
@@ -1580,6 +1947,24 @@ const InteractiveWorld = (() => {
         r2 = 26 + t * 10; g2 = 42 + t * 5; b2 = 62;
         r3 = 26 + t * 10; g3 = 26 + t * 5; b3 = 42 + t * 5;
         starAlpha = 0.5 + t * 0.2;
+      }
+
+      // Blend toward bright cloudy heaven palette when camera is high in the sky.
+      if (CFG.HEAVEN_ENABLED) {
+        const surf = getTerrainY(this.terrain, cx + W * 0.5);
+        const heavenBlend = Math.max(0, Math.min(1, (surf - 200 - cy) / 180));
+        if (heavenBlend > 0) {
+          r1 = r1 + (232 - r1) * heavenBlend;
+          g1 = g1 + (240 - g1) * heavenBlend;
+          b1 = b1 + (255 - b1) * heavenBlend;
+          r2 = r2 + (255 - r2) * heavenBlend;
+          g2 = g2 + (248 - g2) * heavenBlend;
+          b2 = b2 + (240 - b2) * heavenBlend;
+          r3 = r3 + (248 - r3) * heavenBlend;
+          g3 = g3 + (240 - g3) * heavenBlend;
+          b3 = b3 + (230 - b3) * heavenBlend;
+          starAlpha *= (1 - heavenBlend);
+        }
       }
 
       const skyColors = [
@@ -1907,16 +2292,131 @@ const InteractiveWorld = (() => {
       }
     }
 
+    drawSticks(ctx, cx, cy, W, H) {
+      if (!this.stickPickups) return;
+      for (const s of this.stickPickups) {
+        if (s.taken) continue;
+        const sx = s.x - cx, sy = s.y - cy + Math.sin(s.bob) * 2;
+        if (sx < -30 || sx > W + 30 || sy < -30 || sy > H + 30) continue;
+        ctx.save();
+        ctx.strokeStyle = '#8a6a40';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(sx - 6, sy + 4);
+        ctx.lineTo(sx + 6, sy - 4);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    drawFires(ctx, cx, cy, W, H) {
+      if (!this.fires) return;
+      for (const f of this.fires) {
+        const fx = f.x - cx, fy = f.y - cy;
+        if (fx < -40 || fx > W + 40 || fy < -40 || fy > H + 40) continue;
+        ctx.save();
+        const flicker = Math.sin(this.time * 8 + f.x) * 3;
+        ctx.shadowColor = '#ff8b3a';
+        ctx.shadowBlur = 16;
+        const grad = ctx.createRadialGradient(fx, fy - 8, 0, fx, fy - 8, 18);
+        grad.addColorStop(0, 'rgba(255,220,100,0.9)');
+        grad.addColorStop(0.5, 'rgba(255,120,40,0.6)');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(fx, fy - 6 + flicker, 10, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    drawRubProgress(ctx, cx, cy) {
+      if (!this._rubProgress || this._rubProgress <= 0) return;
+      const p = this.player;
+      const gx = p.x + p.w / 2 - cx;
+      const gy = p.y - 18 - cy;
+      const frac = Math.min(1, this._rubProgress / CFG.RUB_FRAMES);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(200,160,80,0.5)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(gx, gy, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#ff8b3a';
+      ctx.beginPath();
+      ctx.arc(gx, gy, 14, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawHeavenTrees(ctx, cx, cy, W, H) {
+      if (!this.heavenTrees || !CFG.HEAVEN_ENABLED) return;
+      for (const t of this.heavenTrees) {
+        const tx = t.x - cx;
+        const baseY = t.baseY - cy;
+        const topY = t.topY - cy;
+        if (tx < -60 || tx > W + 60) continue;
+        ctx.save();
+        ctx.fillStyle = '#5a3a20';
+        ctx.fillRect(tx - t.trunkW / 2, topY, t.trunkW, baseY - topY);
+        ctx.fillStyle = t.color;
+        ctx.beginPath();
+        ctx.arc(tx, topY, t.canopyR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(90,180,90,0.5)';
+        ctx.beginPath();
+        ctx.arc(tx - t.canopyR * 0.3, topY - 8, t.canopyR * 0.6, 0, Math.PI * 2);
+        ctx.arc(tx + t.canopyR * 0.3, topY - 5, t.canopyR * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    drawHeavenClouds(ctx, cx, cy, W, H) {
+      if (!CFG.HEAVEN_ENABLED) return;
+      const surf = getTerrainY(this.terrain, cx + W / 2);
+      if (cy > surf - 120) return;
+      ctx.save();
+      for (let i = 0; i < 8; i++) {
+        const bx = ((i * 620 + this.time * 12) % (W + 400)) - 200;
+        const by = (i * 47) % (H * 0.5);
+        ctx.globalAlpha = 0.25 + (i % 3) * 0.08;
+        ctx.fillStyle = '#fff8f0';
+        ctx.beginPath();
+        ctx.ellipse(bx, by, 70 + i * 8, 28 + i * 3, 0, 0, Math.PI * 2);
+        ctx.ellipse(bx + 40, by + 8, 50, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
     drawPlatforms(ctx, cx, cy, W, H) {
       for (const plat of this.platforms) {
-        const px = plat.x - cx, py = plat.y - cy;
-        if (px + plat.w < -50 || px > W + 50 || py + plat.h < -50 || py > H + 50) continue;
-        ctx.fillStyle = plat.color;
-        ctx.fillRect(px, py, plat.w, plat.h);
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
-        ctx.fillRect(px, py, plat.w, 3);
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        ctx.fillRect(px, py + plat.h - 2, plat.w, 2);
+        const py = platformY(plat, this.time);
+        const px = plat.x - cx, pys = py - cy;
+        if (px + plat.w < -50 || px > W + 50 || pys + plat.h < -50 || pys > H + 50) continue;
+        if (plat.kind === 'cloud') {
+          ctx.save();
+          ctx.globalAlpha = 0.82;
+          ctx.fillStyle = '#f0f4ff';
+          ctx.beginPath();
+          ctx.ellipse(px + plat.w / 2, pys + plat.h / 2, plat.w / 2, plat.h * 0.9, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 0.35;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.ellipse(px + plat.w * 0.35, pys + plat.h * 0.3, plat.w * 0.25, plat.h * 0.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } else {
+          ctx.fillStyle = plat.color;
+          ctx.fillRect(px, pys, plat.w, plat.h);
+          ctx.fillStyle = 'rgba(255,255,255,0.15)';
+          ctx.fillRect(px, pys, plat.w, 3);
+          ctx.fillStyle = 'rgba(0,0,0,0.2)';
+          ctx.fillRect(px, pys + plat.h - 2, plat.w, 2);
+        }
       }
     }
 
@@ -2282,7 +2782,12 @@ const InteractiveWorld = (() => {
     }
   }
 
-  return { WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt, materialAt, MATERIALS, digCellKey, DIG_CELL };
+  return {
+    WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt, touchesWall,
+    materialAt, MATERIALS, digCellKey, DIG_CELL, inHeavenZone, computeSweatRate,
+    generateShovels, generateCaveShovels, generateSticks, generateCaveSticks,
+    generateAscentPlatforms, generateCloudPlatforms
+  };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {
