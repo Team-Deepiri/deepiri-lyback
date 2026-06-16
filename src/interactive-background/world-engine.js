@@ -5,9 +5,9 @@ const InteractiveWorld = (() => {
     WORLD_WIDTH: DEFAULTS.WORLD_WIDTH || 5000,
     WORLD_HEIGHT: DEFAULTS.WORLD_HEIGHT || 1500,
     SURFACE_BASE: DEFAULTS.WORLD_SURFACE_BASE || 350,
-    GRAVITY: 0.55,
-    JUMP_FORCE: -11,
-    MOVE_SPEED: 4.5,
+    GRAVITY: DEFAULTS.WORLD_GRAVITY ?? 0.55,
+    JUMP_FORCE: DEFAULTS.WORLD_JUMP_FORCE ?? -11,
+    MOVE_SPEED: DEFAULTS.WORLD_MOVE_SPEED ?? 4.5,
     MAX_FALL_SPEED: 14,
     PLAYER_W: 18,
     PLAYER_H: 28,
@@ -198,16 +198,22 @@ const InteractiveWorld = (() => {
   }
 
   function generateCaves(heights) {
+    const caveEnabled = DEFAULTS.WORLD_CAVE_ENABLED !== false;
+    const lavaOffset = DEFAULTS.WORLD_CAVE_LAVA_OFFSET ?? 140;
+    const lavaY = CFG.WORLD_HEIGHT - lavaOffset;
+    if (!caveEnabled) {
+      return { tunnels: [], chambers: [], pockets: [], entrances: [], lavaY, digHoles: [] };
+    }
+
     const tunnels = [];
     const chambers = [];
     const pockets = [];
     const entrances = [];
     const W = CFG.WORLD_WIDTH;
-    const R = 30;
+    const R = DEFAULTS.WORLD_CAVE_TUNNEL_RADIUS ?? 30;
     const maxDepth = CFG.WORLD_HEIGHT - 60;
-    const lavaY = CFG.WORLD_HEIGHT - 140;
     const clampY = (y) => Math.min(y, maxDepth);
-    const NUM_ENTRANCES = 4;
+    const NUM_ENTRANCES = Math.max(2, DEFAULTS.WORLD_CAVE_ENTRANCES ?? 4);
 
     for (let e = 0; e < NUM_ENTRANCES; e++) {
       const ex = W * (0.1 + e * (0.8 / (NUM_ENTRANCES - 1))) + (Math.random() - 0.5) * 160;
@@ -262,7 +268,7 @@ const InteractiveWorld = (() => {
 
     // Disconnected pockets: sealed in solid rock (no tunnel reaches them), so the
     // player must DIG in. Each holds loot — see init() for chests/buckets.
-    const numPockets = 6;
+    const numPockets = Math.max(0, DEFAULTS.WORLD_CAVE_SEALED_POCKETS ?? 6);
     for (let i = 0; i < numPockets; i++) {
       const px = 240 + Math.random() * (W - 480);
       const surf = getTerrainY(heights, px);
@@ -280,9 +286,9 @@ const InteractiveWorld = (() => {
   function generateShovels(heights) {
     const shovels = [];
     const W = CFG.WORLD_WIDTH;
-    const n = 2;
+    const n = 3;
     for (let i = 0; i < n; i++) {
-      const x = W * (0.12 + 0.55 * i) + (Math.random() - 0.5) * 200;
+      const x = W * (0.12 + 0.38 * i) + (Math.random() - 0.5) * 180;
       shovels.push({ x, y: getTerrainY(heights, x) - 16, taken: false, bob: Math.random() * Math.PI * 2 });
     }
     return shovels;
@@ -329,6 +335,38 @@ const InteractiveWorld = (() => {
     if (y < getTerrainY(heights, x)) return false;
     if (caveCarved(caves, x, y)) return false;
     return true;
+  }
+
+  const DIG_CELL = 16;
+
+  // Grid cell for dig progress — keyed by cell, not exact point, so running
+  // alongside F does not reset chips on every frame.
+  function digCellKey(fx, fy, cell = DIG_CELL) {
+    return { cellX: Math.floor(fx / cell), cellY: Math.floor(fy / cell) };
+  }
+
+  // Dig materials. `hardness` = chips needed to break through a spot AND the
+  // wear it puts on the shovel. Softer up top (sand/dirt), brutal down deep.
+  const MATERIALS = {
+    sand: { name: 'sand', hardness: 1, color: '#c9a86a', dust: '#ddc78d' },
+    dirt: { name: 'dirt', hardness: 2, color: '#6b4a2f', dust: '#8a6a40' },
+    stone: { name: 'stone', hardness: 4, color: '#5a5a66', dust: '#9a9aa6' },
+    hardrock: { name: 'hard rock', hardness: 7, color: '#3a3540', dust: '#6a6575' },
+    basalt: { name: 'basalt', hardness: 11, color: '#2a1820', dust: '#6a3a3a' }
+  };
+
+  // Which material fills a given underground point.
+  function materialAt(heights, x, y) {
+    const surf = getTerrainY(heights, x);
+    const depth = y - surf;
+    if (depth < 0) return MATERIALS.dirt;
+    const lavaY = CFG.WORLD_HEIGHT - 140;
+    if (y > lavaY - 110) return MATERIALS.basalt;
+    if (depth < 90 && getBiome(x).name === 'desert') return MATERIALS.sand;
+    if (depth < 70) return MATERIALS.dirt;
+    const frac = depth / Math.max(200, CFG.WORLD_HEIGHT - surf);
+    if (frac < 0.42) return MATERIALS.stone;
+    return MATERIALS.hardrock;
   }
 
   class Creature {
@@ -649,6 +687,8 @@ const InteractiveWorld = (() => {
       this.landDust = 0;
       this.hasShovel = false;
       this.digCooldown = 0;
+      this.maxShovelDurability = 120;
+      this.shovelDurability = 0;
       this.maxWater = 100;
       this.water = 100;
       this.deathFlash = 0;
@@ -936,6 +976,7 @@ const InteractiveWorld = (() => {
       this.caves = generateCaves(this.terrain);
       this.shovels = generateShovels(this.terrain);
       this.heat = 0;
+      this._digTarget = null;
       this.buildCaveItems();
 
       const startY = getTerrainY(this.terrain, 100);
@@ -995,7 +1036,7 @@ const InteractiveWorld = (() => {
         }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = true;
-        else if (key === 'f') { e.preventDefault(); this.digAt(); }
+        else if (key === 'f') { e.preventDefault(); this.keys.f = true; }
         else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'e' || key === 'm') {
           if (key === 'e') this.interactWithPortal();
           else if (key === 'm') this.showMinimap = !this.showMinimap;
@@ -1005,7 +1046,7 @@ const InteractiveWorld = (() => {
       document.addEventListener('keyup', (e) => {
         const key = e.key.toLowerCase();
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = false;
-        else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd') this.keys[key === ' ' ? 'space' : key] = false;
+        else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'f') this.keys[key === ' ' ? 'space' : key] = false;
       });
       this.canvas.addEventListener('click', (e) => {
         const rect = this.canvas.getBoundingClientRect();
@@ -1045,21 +1086,56 @@ const InteractiveWorld = (() => {
     digAt() {
       const p = this.player;
       if (!p.hasShovel || p.digCooldown > 0) return;
-      p.digCooldown = 6;
+      p.digCooldown = 2;
       const digDown = this.keys.s || this.keys.down;
       const fx = p.x + p.w / 2 + (digDown ? 0 : p.facing * 16);
       const fy = p.y + p.h + (digDown ? 8 : -4);
+
+      // Nothing to dig if it's already open cave/air.
+      if (!isRockAt(this.caves, this.terrain, fx, fy)) return;
+
+      const mat = materialAt(this.terrain, fx, fy);
+
+      // Each spot has durability = the material's hardness in chips. The target
+      // is keyed to a grid CELL (not the exact point) so progress keeps building
+      // while the player runs — enter a new cell and that's fresh rock to chip.
+      const { cellX, cellY } = digCellKey(fx, fy);
+      const t = this._digTarget;
+      if (!t || t.cellX !== cellX || t.cellY !== cellY) {
+        this._digTarget = { x: fx, y: fy, cellX, cellY, hits: 0, need: mat.hardness, mat };
+      }
+      const target = this._digTarget;
+      target.x = fx; target.y = fy;
+      target.hits++;
+
+      // The shovel wears proportionally to hardness — sand is gentle, basalt eats it.
+      p.shovelDurability = Math.max(0, p.shovelDurability - mat.hardness * 0.8);
+
+      // Dust in the material's colour.
       if (!this.caves.digHoles) this.caves.digHoles = [];
-      this.caves.digHoles.push({ x: fx, y: fy, r: 21 });
-      if (this.caves.digHoles.length > 320) this.caves.digHoles.shift();
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 6; i++) {
         const pt = new WorldParticle(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT);
         pt.x = fx; pt.y = fy;
         pt.vx = (Math.random() - 0.5) * 3.5;
         pt.vy = -Math.random() * 2.5;
         pt.l = 0.8;
-        pt.color = '#caa06a';
+        pt.color = mat.dust;
         this.particles.push(pt);
+      }
+
+      // Break through once the spot's durability is spent.
+      if (target.hits >= target.need) {
+        const hx = cellX * DIG_CELL + DIG_CELL / 2;
+        const hy = cellY * DIG_CELL + DIG_CELL / 2;
+        this.caves.digHoles.push({ x: hx, y: hy, r: 21 });
+        if (this.caves.digHoles.length > 320) this.caves.digHoles.shift();
+        this._digTarget = null;
+      }
+
+      if (p.shovelDurability <= 0) {
+        p.hasShovel = false;
+        this._digTarget = null;
+        this.showInteraction('🛠️ Shovel broke! Find another', '#ff6b6b');
       }
     }
 
@@ -1205,7 +1281,7 @@ const InteractiveWorld = (() => {
       // Computer mode: the player sits at the terminal and types — freeze
       // world movement, grow the monitor, and run the typing animation.
       if (this.computerMode) {
-        this.keys.left = this.keys.right = this.keys.a = this.keys.d = false;
+        this.keys.left = this.keys.right = this.keys.a = this.keys.d = this.keys.f = false;
         this.keys.up = this.keys.w = this.keys.space = false;
         this.player.isTyping = true;
         this.player.typeFrame = (this.player.typeFrame || 0) + 0.35;
@@ -1216,6 +1292,7 @@ const InteractiveWorld = (() => {
       }
 
       this.player.update(this.keys, this.terrain, this.platforms, this.portals, this.chests, this.caves);
+      if (this.keys.f) this.digAt();
       this.updateSurvival();
 
       const tCX = this.player.x + this.player.w / 2 - this.canvas.width * 0.35;
@@ -1258,6 +1335,7 @@ const InteractiveWorld = (() => {
             if (dx * dx + dy * dy < 26 * 26) {
               s.taken = true;
               this.player.hasShovel = true;
+              this.player.shovelDurability = this.player.maxShovelDurability;
               this.showInteraction('🪏 Shovel! Press F to dig', '#ffd479');
             }
           }
@@ -1302,6 +1380,7 @@ const InteractiveWorld = (() => {
       this.drawPortals(ctx, cx, cy, W, H);
       this.drawCreatures(ctx, cx, cy, W, H);
       this.player.draw(ctx, cx, cy, this._playerColor);
+      this.drawDigTarget(ctx, cx, cy);
       if (this.computerGrow > 0.01) this.drawComputer(ctx, cx, cy);
       this.drawParticles(ctx, cx, cy, W, H);
       this.drawWeather(ctx, cx, cy, W, H);
@@ -1344,15 +1423,55 @@ const InteractiveWorld = (() => {
     }
 
     drawShovelHud(ctx, W, H) {
+      const p = this.player;
       ctx.save();
       ctx.font = '12px system-ui, sans-serif';
-      const label = '🪏 F: dig  ·  hold S+F: dig down';
+      ctx.textBaseline = 'middle';
+      const label = '🪏 F: dig · S+F: down';
       const tw = ctx.measureText(label).width + 18;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(12, H - 30, tw, 20);
+      ctx.fillRect(12, H - 32, tw, 22);
       ctx.fillStyle = '#ffd479';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, 21, H - 19);
+      ctx.fillText(label, 21, H - 21);
+
+      // Shovel durability bar.
+      const bx = 12, by = H - 48, bw = 110, bh = 8;
+      const frac = Math.max(0, p.shovelDurability / p.maxShovelDurability);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+      ctx.fillStyle = frac < 0.25 ? '#ff5a4a' : '#caa055';
+      ctx.fillRect(bx, by, bw * frac, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = '9px system-ui, sans-serif';
+      ctx.fillText('shovel', bx + bw + 6, by + bh / 2);
+      ctx.restore();
+    }
+
+    // Show what's being chipped and how far through it the player is.
+    drawDigTarget(ctx, cx, cy) {
+      const t = this._digTarget;
+      if (!t) return;
+      const gx = t.x - cx, gy = t.y - cy;
+      const frac = Math.min(1, t.hits / t.need);
+      ctx.save();
+      ctx.strokeStyle = t.mat ? t.mat.dust : '#caa055';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.85;
+      // progress ring
+      ctx.beginPath();
+      ctx.arc(gx, gy, 14, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+      ctx.stroke();
+      // crack marks
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1;
+      const cracks = Math.ceil(frac * 4);
+      for (let i = 0; i < cracks; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(gx, gy);
+        ctx.lineTo(gx + Math.cos(a) * 10, gy + Math.sin(a) * 10);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
@@ -2154,7 +2273,7 @@ const InteractiveWorld = (() => {
     }
   }
 
-  return { WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt };
+  return { WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt, materialAt, MATERIALS, digCellKey, DIG_CELL };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

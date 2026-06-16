@@ -1,0 +1,38 @@
+{
+  "name": "Surface Stroll",
+  "description": "No caves — just the overworld to explore and tweak physics on.",
+  "world": {
+    "width": 4000,
+    "height": 1200,
+    "surfaceBase": 300
+  },
+  "physics": {
+    "gravity": 0.45,
+    "jumpForce": -13,
+    "moveSpeed": 5.5
+  },
+  "entities": {
+    "platforms": 18,
+    "portals": 6,
+    "creatures": 20,
+    "chests": 8,
+    "crystals": 12,
+    "particles": 100
+  },
+  "caves": {
+    "enabled": false
+  },
+  "visuals": {
+    "skyTop": "#1a0a2e",
+    "skyBottom": "#3d2a5c",
+    "groundTop": "#5aaa6b",
+    "groundBottom": "#2a1a0a",
+    "playerColor": "#ffeaa7",
+    "palette": ["#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dfe6e9"]
+  },
+  "environment": {
+    "biome": "plains",
+    "weather": "clear",
+    "timeOfDay": 0.55
+  }
+}

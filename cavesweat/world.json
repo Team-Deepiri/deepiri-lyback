@@ -1,0 +1,42 @@
+{
+  "name": "Cavesweat",
+  "description": "Explore sprawling cave networks beneath the surface. Dig for sealed loot pockets, survive the lava zone, and map the underground.",
+  "world": {
+    "width": 5000,
+    "height": 1500,
+    "surfaceBase": 350
+  },
+  "physics": {
+    "gravity": 0.55,
+    "jumpForce": -11,
+    "moveSpeed": 4.5
+  },
+  "entities": {
+    "platforms": 10,
+    "portals": 6,
+    "creatures": 15,
+    "chests": 5,
+    "crystals": 8,
+    "particles": 60
+  },
+  "caves": {
+    "enabled": true,
+    "entrances": 4,
+    "tunnelRadius": 30,
+    "sealedPockets": 6,
+    "lavaOffset": 140
+  },
+  "visuals": {
+    "skyTop": "#0a0a1a",
+    "skyBottom": "#1a2a3e",
+    "groundTop": "#3a7d5a",
+    "groundBottom": "#1a0a0a",
+    "playerColor": "#4ecdc4",
+    "palette": ["#ff6b6b", "#4ecdc4", "#45b7d1", "#96ceb4", "#ffeaa7", "#dfe6e9"]
+  },
+  "environment": {
+    "biome": "auto",
+    "weather": "auto",
+    "timeOfDay": 0.3
+  }
+}
