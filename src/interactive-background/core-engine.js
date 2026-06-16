@@ -184,13 +184,14 @@ const InteractiveEngine = (() => {
     loop(timestamp) {
       if (!this.isRunning) return;
 
-      this.deltaTime = timestamp - this.lastTime;
+      const interval = 1000 / CONFIG.TARGET_FPS;
+      this.deltaTime += timestamp - this.lastTime;
       this.lastTime = timestamp;
 
-      if (this.deltaTime >= 1000 / CONFIG.TARGET_FPS) {
+      if (this.deltaTime >= interval) {
         this.update();
         this.draw();
-        this.deltaTime = 0;
+        this.deltaTime = Math.min(this.deltaTime % interval, interval);
       }
 
       requestAnimationFrame((t) => this.loop(t));
@@ -199,6 +200,9 @@ const InteractiveEngine = (() => {
     start() {
       this.isRunning = true;
       this.lastTime = performance.now();
+      this.deltaTime = 0;
+      this.update();
+      this.draw();
       this.loop(this.lastTime);
     }
 

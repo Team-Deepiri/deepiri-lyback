@@ -25,6 +25,19 @@
   ],
   "author": "Deepiri",
   "license": "Apache-2.0",
+  "build": {
+    "appId": "com.deepiri.lyback",
+    "productName": "Deepiri Lyback",
+    "files": ["electron/**", "src/**", "tools/**", "assets/**", "package.json"],
+    "fileAssociations": [
+      {
+        "ext": "lyv",
+        "name": "Lyvector World",
+        "description": "Deepiri interactive world",
+        "role": "Editor"
+      }
+    ]
+  },
   "homepage": "https://github.com/deepiri/livegrounds#readme",
   "bugs": {
     "url": "https://github.com/Team-Deepiri/deepiri-lyback/issues"

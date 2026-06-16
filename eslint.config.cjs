@@ -64,6 +64,7 @@ module.exports = [
         ...globals,
         require: 'readonly',
         global: 'readonly',
+        Buffer: 'readonly',
         describe: 'readonly',
         it: 'readonly',
         expect: 'readonly',
