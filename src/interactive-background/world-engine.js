@@ -33,6 +33,8 @@ const InteractiveWorld = (() => {
     HEAVEN_CLOUD_PLATFORMS: DEFAULTS.WORLD_HEAVEN_CLOUD_PLATFORMS ?? 14,
     HEAVEN_TREES: DEFAULTS.WORLD_HEAVEN_TREES ?? 10,
     HEAVEN_FREEZE_RATE: DEFAULTS.WORLD_HEAVEN_FREEZE_RATE ?? 0.12,
+    HEAVEN_SKY_HEIGHT: DEFAULTS.WORLD_HEAVEN_SKY_HEIGHT ?? 400,
+    ASCENT_STEP_Y: 50,
     SURVIVAL_RUN_SWEAT_MULT: DEFAULTS.WORLD_SURVIVAL_RUN_SWEAT_MULT ?? 1.8,
     SURVIVAL_SURFACE_IDLE_SWEAT: DEFAULTS.WORLD_SURVIVAL_SURFACE_IDLE_SWEAT ?? 0.015,
     SURVIVAL_IDLE_DEEP_MULT: DEFAULTS.WORLD_SURVIVAL_IDLE_DEEP_MULT ?? 0.65,
@@ -92,48 +94,87 @@ const InteractiveWorld = (() => {
     return platforms;
   }
 
+  // Stepping-stone tower from the surface lip up to the heaven cloud layer.
+  function buildAscentTower(platforms, heights, towerX) {
+    const surf = getTerrainY(heights, towerX);
+    const biome = getBiome(towerX);
+    const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
+    const goalY = heavenLine + 45;
+    const startY = surf - 18;
+    const stepY = CFG.ASCENT_STEP_Y;
+    const steps = Math.max(5, Math.ceil((startY - goalY) / stepY));
+    let px = towerX;
+
+    platforms.push({
+      x: px - 52, y: startY, w: 104, h: 12,
+      color: biome.accent, kind: 'solid'
+    });
+
+    for (let i = 1; i <= steps; i++) {
+      const py = Math.max(goalY, startY - i * stepY);
+      px += (i % 2 === 0 ? 1 : -1) * (24 + Math.random() * 22);
+      platforms.push({
+        x: px - 42, y: py, w: 84 + Math.random() * 28, h: 12,
+        color: biome.accent, kind: 'solid'
+      });
+      if (py <= goalY) break;
+    }
+  }
+
   // Stepping-stone platforms between ground and the heaven cloud layer.
   function generateAscentPlatforms(heights, entrances) {
     if (!CFG.HEAVEN_ENABLED) return [];
     const platforms = [];
-    const count = CFG.HEAVEN_ASCENT_PLATFORMS;
-    const clusters = Math.max(3, Math.floor(count / 5));
-    for (let c = 0; c < clusters; c++) {
-      const baseX = entrances && entrances.length
-        ? entrances[c % entrances.length] + (Math.random() - 0.5) * 220
-        : 300 + (c / clusters) * (CFG.WORLD_WIDTH - 600) + (Math.random() - 0.5) * 200;
-      const surf = getTerrainY(heights, baseX);
-      const heavenY = surf - CFG.HEAVEN_ALTITUDE;
-      const perCluster = Math.ceil(count / clusters);
-      let px = baseX, py = surf - 70;
-      for (let i = 0; i < perCluster && platforms.length < count; i++) {
-        px += (Math.random() - 0.3) * 90;
-        py -= 35 + Math.random() * 45;
-        if (py < heavenY + 20) py = heavenY + 20 + Math.random() * 40;
-        const biome = getBiome(px);
-        platforms.push({
-          x: px, y: py, w: 65 + Math.random() * 55, h: 12,
-          color: biome.accent, kind: 'solid'
-        });
-      }
+    const spots = entrances && entrances.length
+      ? entrances.slice()
+      : [CFG.WORLD_WIDTH * 0.15, CFG.WORLD_WIDTH * 0.4, CFG.WORLD_WIDTH * 0.65, CFG.WORLD_WIDTH * 0.85];
+
+    for (const ex of spots) {
+      buildAscentTower(platforms, heights, ex - 110);
+      buildAscentTower(platforms, heights, ex + 90);
     }
-    return platforms;
+    for (const frac of [0.28, 0.52, 0.76]) {
+      buildAscentTower(platforms, heights, CFG.WORLD_WIDTH * frac + (Math.random() - 0.5) * 160);
+    }
+
+    while (platforms.length < CFG.HEAVEN_ASCENT_PLATFORMS) {
+      const x = 250 + Math.random() * (CFG.WORLD_WIDTH - 500);
+      const surf = getTerrainY(heights, x);
+      const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
+      const y = surf - 80 - Math.random() * (surf - heavenLine - 100);
+      if (y < heavenLine + 30) break;
+      platforms.push({
+        x: x - 35, y, w: 70 + Math.random() * 40, h: 12,
+        color: getBiome(x).accent, kind: 'solid'
+      });
+    }
+    return platforms.slice(0, CFG.HEAVEN_ASCENT_PLATFORMS);
   }
 
-  // Soft cloud platforms in the heaven zone — only reachable after climbing ascent tier.
+  // Soft cloud platforms in the heaven zone — reachable after climbing ascent towers.
   function generateCloudPlatforms(heights) {
     if (!CFG.HEAVEN_ENABLED) return [];
     const platforms = [];
-    for (let i = 0; i < CFG.HEAVEN_CLOUD_PLATFORMS; i++) {
-      const x = 200 + Math.random() * (CFG.WORLD_WIDTH - 400);
-      const surf = getTerrainY(heights, x);
+    const clusters = Math.max(5, Math.ceil(CFG.HEAVEN_CLOUD_PLATFORMS / 5));
+    const perCluster = Math.ceil(CFG.HEAVEN_CLOUD_PLATFORMS / clusters);
+    const skyDepth = CFG.HEAVEN_SKY_HEIGHT * 0.4;
+
+    for (let c = 0; c < clusters; c++) {
+      const cx = 180 + Math.random() * (CFG.WORLD_WIDTH - 360);
+      const surf = getTerrainY(heights, cx);
       const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
-      const y = heavenLine - 20 - Math.random() * 120;
-      platforms.push({
-        x, y, w: 100 + Math.random() * 60, h: 14,
-        color: 'rgba(255,255,255,0.85)', kind: 'cloud',
-        bob: Math.random() * Math.PI * 2, bobAmp: 2 + Math.random() * 3
-      });
+      let px = cx;
+      let py = heavenLine - 25;
+      for (let i = 0; i < perCluster && platforms.length < CFG.HEAVEN_CLOUD_PLATFORMS; i++) {
+        px += (Math.random() - 0.5) * 100;
+        py -= 30 + Math.random() * 32;
+        if (py < heavenLine - skyDepth) py = heavenLine - 30 - Math.random() * 60;
+        platforms.push({
+          x: px, y: py, w: 110 + Math.random() * 50, h: 14,
+          color: 'rgba(255,255,255,0.85)', kind: 'cloud',
+          bob: Math.random() * Math.PI * 2, bobAmp: 2 + Math.random() * 3
+        });
+      }
     }
     return platforms;
   }
@@ -644,6 +685,11 @@ const InteractiveWorld = (() => {
     return plat.y;
   }
 
+  function heavenCamMinY() {
+    if (!CFG.HEAVEN_ENABLED) return 0;
+    return -(CFG.HEAVEN_SKY_HEIGHT + 100);
+  }
+
   // Dig materials. `hardness` = chips needed to break through a spot AND the
   // wear it puts on the shovel. Softer up top (sand/dirt), brutal down deep.
   const MATERIALS = {
@@ -1132,6 +1178,10 @@ const InteractiveWorld = (() => {
 
       if (this.x < 0) { this.x = 0; this.vx = 0; }
       if (this.x + this.w > CFG.WORLD_WIDTH) { this.x = CFG.WORLD_WIDTH - this.w; this.vx = 0; }
+      if (CFG.HEAVEN_ENABLED && this.y < -CFG.HEAVEN_SKY_HEIGHT) {
+        this.y = -CFG.HEAVEN_SKY_HEIGHT;
+        this.vy = 0;
+      }
       if (this.y > CFG.WORLD_HEIGHT + 200) { this.y = 200; this.vy = 0; }
 
       if (this.isMoving && this.onGround) this.walkFrame += 0.12;
@@ -1696,7 +1746,7 @@ const InteractiveWorld = (() => {
       this.updateRubbing();
       this.updateSurvival();
 
-      const camMinY = CFG.HEAVEN_ENABLED ? -CFG.HEAVEN_ALTITUDE * 0.3 : 0;
+      const camMinY = heavenCamMinY();
       const tCX = this.player.x + this.player.w / 2 - this.canvas.width * 0.35;
       const tCY = this.player.y + this.player.h / 2 - this.canvas.height * 0.5;
       this.cameraX += (tCX - this.cameraX) * 0.08;
