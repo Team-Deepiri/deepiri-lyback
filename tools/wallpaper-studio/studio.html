@@ -1418,6 +1418,19 @@
     document.getElementById('canvas-width').addEventListener('change', () => { initCanvas(); });
     document.getElementById('canvas-height').addEventListener('change', () => { initCanvas(); });
 
+    // Drag a .lyv anywhere onto the studio window to load and run it live.
+    document.addEventListener('dragover', (e) => { e.preventDefault(); });
+    document.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const f = e.dataTransfer && e.dataTransfer.files[0];
+      if (!f) return;
+      try {
+        const buf = new Uint8Array(await f.arrayBuffer());
+        const lyv = (typeof Lyvector !== 'undefined') ? Lyvector.decode(buf) : null;
+        if (lyv && lyv.scene) loadSceneIntoStudio(lyv.scene);
+      } catch (err) { /* not a .lyv — ignore */ }
+    });
+
     document.querySelectorAll('.panel-header').forEach(hdr => {
       hdr.addEventListener('click', () => {
         const body = hdr.nextElementSibling;
@@ -1456,11 +1469,34 @@
     const native = (typeof window !== 'undefined') ? window.deepiriNative : null;
     let desktopFiles = null;       // cached file list
     let terminalStarted = false;
+    let awaitingPassword = false;  // true while a sudo/password prompt is open
 
     const termOverlay = document.getElementById('terminal-overlay');
     const termOutput = document.getElementById('terminal-output');
     const termInput = document.getElementById('terminal-input');
+    const termPromptEl = document.getElementById('terminal-prompt');
     const termClose = document.getElementById('terminal-close');
+
+    // A shell connected by pipes (no TTY) can't run sudo normally: sudo reads the
+    // password from /dev/tty and prints its prompt there, so neither reaches us.
+    // `sudo -S` makes it read the password from stdin and print the prompt to
+    // stderr — both of which we DO pipe. Rewrite bare sudo calls to use it.
+    function rewriteSudo(cmd) {
+      return cmd.replace(/(^|[;&|]\s*)sudo(\s+)(?!-)/g, '$1sudo$2-S ');
+    }
+
+    function looksLikePasswordPrompt(text) {
+      return /\[sudo\]\s*password|password for [^:]*:|(^|\s)password:\s*$/i.test(text);
+    }
+
+    function setPasswordMode(on) {
+      awaitingPassword = on;
+      if (!termInput) return;
+      termInput.type = on ? 'password' : 'text';
+      termInput.placeholder = on ? 'enter password and press Enter…' : 'type a command and press Enter…';
+      if (termPromptEl) termPromptEl.textContent = on ? '🔒' : '$';
+      if (on) termInput.focus();
+    }
 
     function termPrint(text, cls) {
       const span = document.createElement('span');
@@ -1481,7 +1517,10 @@
       termInput.focus();
       if (!terminalStarted) {
         terminalStarted = true;
-        native.terminal.onData((chunk) => termPrint(chunk));
+        native.terminal.onData((chunk) => {
+          termPrint(chunk);
+          if (looksLikePasswordPrompt(chunk)) setPasswordMode(true);
+        });
         native.terminal.onExit(() => termPrint('\n[shell exited]\n', 'term-sys'));
         native.terminal.start().then((info) => {
           termPrint('Connected to ' + (info && info.shell ? info.shell : 'shell') + '\n', 'term-sys');
@@ -1497,10 +1536,18 @@
     if (termInput) {
       termInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-          const cmd = termInput.value;
-          termPrint('$ ' + cmd + '\n', 'term-cmd');
-          if (native) native.terminal.input(cmd + '\n');
+          const value = termInput.value;
           termInput.value = '';
+          if (awaitingPassword) {
+            // Feed the password straight to the shell's stdin (sudo -S reads it
+            // there); never echo it back.
+            termPrint('••••••••\n', 'term-sys');
+            if (native) native.terminal.input(value + '\n');
+            setPasswordMode(false);
+          } else {
+            termPrint('$ ' + value + '\n', 'term-cmd');
+            if (native) native.terminal.input(rewriteSudo(value) + '\n');
+          }
         } else if (e.key === 'Escape') {
           closeTerminal();
         }

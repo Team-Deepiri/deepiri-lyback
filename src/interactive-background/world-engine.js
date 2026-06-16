@@ -132,6 +132,205 @@ const InteractiveWorld = (() => {
     return crystals;
   }
 
+  // ---- cave / tunnel system -------------------------------------------------
+  // Caves are an analytic network: round-capped tunnel "capsules" plus circular
+  // chambers carved out of the solid rock that fills everything below the
+  // surface. Entrances are shafts whose tops break through the surface so the
+  // player can drop in.
+  const COLORS_LIST = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'];
+
+  function makeCaveCrystals(r) {
+    const out = [];
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      out.push({
+        dx: (Math.random() - 0.5) * r * 1.2,
+        dy: r * 0.45 + Math.random() * r * 0.35,
+        r: 2.5 + Math.random() * 3.5,
+        color: COLORS_LIST[Math.floor(Math.random() * COLORS_LIST.length)]
+      });
+    }
+    return out;
+  }
+
+  function makeStalactites(r) {
+    const out = [];
+    const n = 3 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < n; i++) {
+      out.push({
+        dx: (Math.random() - 0.5) * r * 1.5,
+        len: 8 + Math.random() * 22,
+        w: 4 + Math.random() * 6,
+        up: Math.random() < 0.5 // false = hangs from ceiling, true = rises from floor
+      });
+    }
+    return out;
+  }
+
+  function makeChamber(x, y, r) {
+    // Deeper chambers accumulate more loose rock/boulders on the floor.
+    const depthFrac = Math.min(1, y / CFG.WORLD_HEIGHT);
+    const boulders = [];
+    const nb = Math.floor(depthFrac * 8);
+    for (let i = 0; i < nb; i++) {
+      boulders.push({
+        dx: (Math.random() - 0.5) * r * 1.5,
+        dy: r * 0.5 + Math.random() * r * 0.4,
+        r: 4 + Math.random() * 9 * (0.4 + depthFrac)
+      });
+    }
+    return { x, y, r, crystals: makeCaveCrystals(r), stalactites: makeStalactites(r), boulders };
+  }
+
+  // Carve a meandering tunnel from A to B as several jittered capsule segments,
+  // so cave passages look organic rather than ruler-straight.
+  function windingTunnel(tunnels, x1, y1, x2, y2, r, steps) {
+    let px = x1, py = y1;
+    const maxDepth = CFG.WORLD_HEIGHT - 70;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const last = i === steps;
+      const nx = x1 + (x2 - x1) * t + (last ? 0 : (Math.random() - 0.5) * 140);
+      const ny = Math.min(maxDepth, y1 + (y2 - y1) * t + (last ? 0 : (Math.random() - 0.5) * 70));
+      tunnels.push({ ax: px, ay: py, bx: nx, by: ny, r: r * (0.85 + Math.random() * 0.3) });
+      px = nx; py = ny;
+    }
+  }
+
+  function generateCaves(heights) {
+    const tunnels = [];
+    const chambers = [];
+    const pockets = [];
+    const entrances = [];
+    const W = CFG.WORLD_WIDTH;
+    const R = 30;
+    const maxDepth = CFG.WORLD_HEIGHT - 60;
+    const lavaY = CFG.WORLD_HEIGHT - 140;
+    const clampY = (y) => Math.min(y, maxDepth);
+    const NUM_ENTRANCES = 4;
+
+    for (let e = 0; e < NUM_ENTRANCES; e++) {
+      const ex = W * (0.1 + e * (0.8 / (NUM_ENTRANCES - 1))) + (Math.random() - 0.5) * 160;
+      const surf = getTerrainY(heights, ex);
+      entrances.push(ex);
+      let curX = ex;
+      let curY = clampY(surf + 190 + Math.random() * 110);
+
+      // Entrance shaft — top breaks through the surface to open a hole.
+      tunnels.push({ ax: ex, ay: surf - 26, bx: ex + (Math.random() - 0.5) * 30, by: curY, r: R });
+
+      // Descend through several levels, branching a gallery + chamber at each,
+      // so each entrance becomes a sprawling multi-level system.
+      const levels = 3 + Math.floor(Math.random() * 3);
+      for (let lvl = 0; lvl < levels; lvl++) {
+        const d = Math.random() < 0.5 ? -1 : 1;
+        const gx = curX + d * (280 + Math.random() * 400);
+        const gy = clampY(curY + (Math.random() - 0.5) * 80);
+        windingTunnel(tunnels, curX, curY, gx, gy, R + 3, 3);
+        chambers.push(makeChamber(gx, gy, 55 + Math.random() * 60));
+
+        // A side passage + smaller chamber off the gallery.
+        if (Math.random() < 0.65) {
+          const sx = gx - d * (140 + Math.random() * 180);
+          const sy = clampY(gy + 30 + Math.random() * 120);
+          windingTunnel(tunnels, gx, gy, sx, sy, R - 7, 2);
+          chambers.push(makeChamber(sx, sy, 42 + Math.random() * 38));
+        }
+
+        // Descend to the next level.
+        const nx = gx + (Math.random() - 0.5) * 240;
+        const ny = clampY(gy + 170 + Math.random() * 170);
+        windingTunnel(tunnels, gx, gy, nx, ny, R - 2, 2);
+        curX = nx; curY = ny;
+      }
+      // Deep bottom chamber (often into the lava zone).
+      chambers.push(makeChamber(curX, clampY(curY + 60), 85 + Math.random() * 60));
+    }
+
+    // A grand cavern deep in the middle.
+    const grandX = W * 0.5 + (Math.random() - 0.5) * 320;
+    const grandY = clampY(getTerrainY(heights, grandX) + 860 + Math.random() * 140);
+    chambers.push(makeChamber(grandX, grandY, 165 + Math.random() * 70));
+    windingTunnel(tunnels, grandX, clampY(grandY - 430), grandX, grandY, R, 4);
+
+    // Deep through-tunnels linking adjacent systems into one network.
+    for (let i = 0; i < entrances.length - 1; i++) {
+      const ay = clampY(getTerrainY(heights, entrances[i]) + 340 + Math.random() * 220);
+      const by = clampY(getTerrainY(heights, entrances[i + 1]) + 340 + Math.random() * 220);
+      windingTunnel(tunnels, entrances[i], ay, entrances[i + 1], by, R - 2, 4);
+    }
+
+    // Disconnected pockets: sealed in solid rock (no tunnel reaches them), so the
+    // player must DIG in. Each holds loot — see init() for chests/buckets.
+    const numPockets = 6;
+    for (let i = 0; i < numPockets; i++) {
+      const px = 240 + Math.random() * (W - 480);
+      const surf = getTerrainY(heights, px);
+      const py = clampY(surf + 240 + Math.random() * 700);
+      const pk = makeChamber(px, py, 44 + Math.random() * 28);
+      pk.sealed = true;
+      pk.loot = true;
+      pockets.push(pk);
+    }
+
+    return { tunnels, chambers, pockets, entrances, lavaY, digHoles: [] };
+  }
+
+  // Shovel pickups on the surface — grab one to unlock digging.
+  function generateShovels(heights) {
+    const shovels = [];
+    const W = CFG.WORLD_WIDTH;
+    const n = 2;
+    for (let i = 0; i < n; i++) {
+      const x = W * (0.12 + 0.55 * i) + (Math.random() - 0.5) * 200;
+      shovels.push({ x, y: getTerrainY(heights, x) - 16, taken: false, bob: Math.random() * Math.PI * 2 });
+    }
+    return shovels;
+  }
+
+  function segDistSq(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const l2 = dx * dx + dy * dy;
+    let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const qx = ax + t * dx, qy = ay + t * dy;
+    return (px - qx) * (px - qx) + (py - qy) * (py - qy);
+  }
+
+  // Is (x,y) inside carved cave space?
+  function caveCarved(caves, x, y) {
+    if (!caves) return false;
+    for (const t of caves.tunnels) {
+      if (segDistSq(x, y, t.ax, t.ay, t.bx, t.by) < t.r * t.r) return true;
+    }
+    for (const c of caves.chambers) {
+      const dx = x - c.x, dy = y - c.y;
+      if (dx * dx + dy * dy < c.r * c.r) return true;
+    }
+    if (caves.pockets) {
+      for (const c of caves.pockets) {
+        const dx = x - c.x, dy = y - c.y;
+        if (dx * dx + dy * dy < c.r * c.r) return true;
+      }
+    }
+    if (caves.digHoles) {
+      for (const d of caves.digHoles) {
+        const dx = x - d.x, dy = y - d.y;
+        if (dx * dx + dy * dy < d.r * d.r) return true;
+      }
+    }
+    return false;
+  }
+
+  // Is (x,y) solid rock the player collides with? Above the surface is air;
+  // below it is rock except where a cave carves it away. Out-of-bounds is solid.
+  function isRockAt(caves, heights, x, y) {
+    if (x < 0 || x > CFG.WORLD_WIDTH) return true;
+    if (y < getTerrainY(heights, x)) return false;
+    if (caveCarved(caves, x, y)) return false;
+    return true;
+  }
+
   class Creature {
     constructor(worldWidth, worldHeight, heights, forcedType) {
       this.worldWidth = worldWidth;
@@ -448,9 +647,14 @@ const InteractiveWorld = (() => {
       this.canDoubleJump = true;
       this.portalCooldown = 0;
       this.landDust = 0;
+      this.hasShovel = false;
+      this.digCooldown = 0;
+      this.maxWater = 100;
+      this.water = 100;
+      this.deathFlash = 0;
     }
 
-    update(keys, heights, platforms, portals, chests) {
+    update(keys, heights, platforms, portals, chests, caves) {
       const moveX = (keys.left || keys.a) ? -1 : (keys.right || keys.d) ? 1 : 0;
       if (moveX !== 0) {
         this.vx = moveX * CFG.MOVE_SPEED;
@@ -479,22 +683,41 @@ const InteractiveWorld = (() => {
       this.vy += CFG.GRAVITY;
       if (this.vy > CFG.MAX_FALL_SPEED) this.vy = CFG.MAX_FALL_SPEED;
 
-      this.x += this.vx;
-      this.y += this.vy;
-
       this.wasOnGround = this.onGround;
       this.onGround = false;
 
-      const tx = this.x + this.w / 2;
-      const terrainY = getTerrainY(heights, tx);
-      const pb = this.y + this.h;
+      // --- horizontal move + cave-wall resolution ---
+      this.x += this.vx;
+      const midY = this.y + this.h / 2;
+      if (this.vx > 0 && isRockAt(caves, heights, this.x + this.w, midY)) {
+        let g = 0;
+        while (isRockAt(caves, heights, this.x + this.w, midY) && g++ < 48) this.x -= 1;
+        this.vx = 0;
+      } else if (this.vx < 0 && isRockAt(caves, heights, this.x, midY)) {
+        let g = 0;
+        while (isRockAt(caves, heights, this.x, midY) && g++ < 48) this.x += 1;
+        this.vx = 0;
+      }
 
-      if (pb >= terrainY) {
-        this.y = terrainY - this.h;
+      // --- vertical move + surface/cave floor & ceiling resolution ---
+      // isRockAt treats the surface as the top of solid rock, so this single
+      // model lands the player on the ground AND on cave floors, lets them rise
+      // into ceilings, and drops them through carved entrance shafts.
+      this.y += this.vy;
+      const cxp = this.x + this.w / 2;
+      if (this.vy >= 0) {
+        if (isRockAt(caves, heights, cxp, this.y + this.h)) {
+          let g = 0;
+          while (isRockAt(caves, heights, cxp, this.y + this.h) && g++ < 240) this.y -= 1;
+          this.vy = 0;
+          this.onGround = true;
+          this.canDoubleJump = true;
+          if (!this.wasOnGround) this.landDust = 8;
+        }
+      } else if (isRockAt(caves, heights, cxp, this.y)) {
+        let g = 0;
+        while (isRockAt(caves, heights, cxp, this.y) && g++ < 240) this.y += 1;
         this.vy = 0;
-        this.onGround = true;
-        this.canDoubleJump = true;
-        if (!this.wasOnGround && this.vy >= -1) this.landDust = 8;
       }
 
       for (const plat of platforms) {
@@ -518,6 +741,7 @@ const InteractiveWorld = (() => {
 
       if (this.portalCooldown > 0) this.portalCooldown--;
       if (this.landDust > 0) this.landDust--;
+      if (this.digCooldown > 0) this.digCooldown--;
 
       for (const p of portals) {
         const dx = (this.x + this.w / 2) - p.x;
@@ -709,6 +933,10 @@ const InteractiveWorld = (() => {
       this.portals = generatePortals(this.terrain);
       this.chests = generateChests(this.terrain);
       this.crystals = generateCrystals(this.terrain);
+      this.caves = generateCaves(this.terrain);
+      this.shovels = generateShovels(this.terrain);
+      this.heat = 0;
+      this.buildCaveItems();
 
       const startY = getTerrainY(this.terrain, 100);
       this.player = new Player(100, startY - CFG.PLAYER_H - 5);
@@ -767,6 +995,7 @@ const InteractiveWorld = (() => {
         }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = true;
+        else if (key === 'f') { e.preventDefault(); this.digAt(); }
         else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'e' || key === 'm') {
           if (key === 'e') this.interactWithPortal();
           else if (key === 'm') this.showMinimap = !this.showMinimap;
@@ -808,6 +1037,134 @@ const InteractiveWorld = (() => {
         const dy = (this.player.y + this.player.h / 2) - p.y;
         if (Math.sqrt(dx * dx + dy * dy) < p.radius + 40) { this.activatePortal(p); break; }
       }
+    }
+
+    // Carve a hole with the shovel: in front of the player, biased downward if
+    // crouching. Dug holes become real walkable cave space (see caveCarved), so
+    // the player can tunnel their own caves anywhere.
+    digAt() {
+      const p = this.player;
+      if (!p.hasShovel || p.digCooldown > 0) return;
+      p.digCooldown = 6;
+      const digDown = this.keys.s || this.keys.down;
+      const fx = p.x + p.w / 2 + (digDown ? 0 : p.facing * 16);
+      const fy = p.y + p.h + (digDown ? 8 : -4);
+      if (!this.caves.digHoles) this.caves.digHoles = [];
+      this.caves.digHoles.push({ x: fx, y: fy, r: 21 });
+      if (this.caves.digHoles.length > 320) this.caves.digHoles.shift();
+      for (let i = 0; i < 7; i++) {
+        const pt = new WorldParticle(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT);
+        pt.x = fx; pt.y = fy;
+        pt.vx = (Math.random() - 0.5) * 3.5;
+        pt.vy = -Math.random() * 2.5;
+        pt.l = 0.8;
+        pt.color = '#caa06a';
+        this.particles.push(pt);
+      }
+    }
+
+    // Place a chest + bucket in every sealed pocket, plus survival buckets in
+    // deeper connected chambers.
+    buildCaveItems() {
+      this.caveChests = [];
+      this.buckets = [];
+      const LOOT = ['💎 Gems', '🗝️ Old Key', '📜 Map Scrap', '🪙 Gold Stash', '🔮 Relic', '⚙️ Cog'];
+      for (const p of this.caves.pockets) {
+        const fy = p.y + p.r * 0.45;
+        this.caveChests.push({
+          x: p.x - 14, y: fy, w: 20, h: 16, open: false,
+          pulse: Math.random() * 6, loot: LOOT[Math.floor(Math.random() * LOOT.length)]
+        });
+        this.buckets.push({ x: p.x + 16, y: fy + 2, bob: Math.random() * 6 });
+      }
+      for (const c of this.caves.chambers) {
+        if (c.y > getTerrainY(this.terrain, c.x) + 320 && Math.random() < 0.5) {
+          this.buckets.push({ x: c.x + (Math.random() - 0.5) * c.r * 0.5, y: c.y + c.r * 0.5, bob: Math.random() * 6 });
+        }
+      }
+    }
+
+    // Heat rises with depth: the player sweats out water, lava scorches, and
+    // running dry sends them back to the surface. Buckets refill; chests open.
+    updateSurvival() {
+      const p = this.player;
+      const cxp = p.x + p.w / 2;
+      const surf = getTerrainY(this.terrain, cxp);
+      const depth = (p.y + p.h / 2) - surf;
+      const lavaY = (this.caves && this.caves.lavaY) || (CFG.WORLD_HEIGHT - 140);
+      const span = Math.max(200, lavaY - surf);
+      let heat = depth > 0 ? Math.min(1, depth / span) : 0;
+
+      const inLava = depth > 0 && (p.y + p.h) >= lavaY && caveCarved(this.caves, cxp, p.y + p.h);
+      if (inLava) {
+        heat = 1.5;
+        this.spawnHeatParticle(cxp + (Math.random() - 0.5) * 16, p.y + p.h);
+      }
+      this.heat = Math.min(1, heat);
+
+      if (heat > 0.12) {
+        p.water -= heat * 0.11;
+        if (Math.random() < heat * 0.3) this.spawnSweat();
+      } else if (p.water < p.maxWater) {
+        p.water += 0.05;
+      }
+      p.water = Math.max(0, Math.min(p.maxWater, p.water));
+      if (p.water <= 0) this.killPlayer();
+
+      for (const b of this.buckets) {
+        b.bob += 0.05;
+        const dx = cxp - b.x, dy = (p.y + p.h / 2) - b.y;
+        if (dx * dx + dy * dy < 26 * 26 && p.water < p.maxWater) {
+          p.water = p.maxWater;
+          this.showInteraction('💧 Refilled!', '#45b7d1');
+        }
+      }
+
+      for (const c of this.caveChests) {
+        c.pulse += 0.04;
+        if (!c.open) {
+          const dx = cxp - c.x, dy = (p.y + p.h / 2) - c.y;
+          if (dx * dx + dy * dy < 30 * 30) {
+            c.open = true;
+            this.showInteraction('📦 ' + c.loot, '#ffd479');
+          }
+        }
+      }
+      if (p.deathFlash > 0) p.deathFlash--;
+    }
+
+    killPlayer() {
+      const p = this.player;
+      p.x = 100;
+      p.y = getTerrainY(this.terrain, 100) - p.h - 5;
+      p.vx = 0; p.vy = 0;
+      p.water = p.maxWater;
+      p.deathFlash = 30;
+      this.showInteraction('💀 Dehydrated — back to the surface', '#ff6b6b');
+    }
+
+    spawnSweat() {
+      const p = this.player;
+      const pt = new WorldParticle(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT);
+      pt.x = p.x + p.w / 2 + (Math.random() - 0.5) * 10;
+      pt.y = p.y + 4;
+      pt.vx = (Math.random() - 0.5) * 1.2;
+      pt.vy = 0.8 + Math.random() * 1.2;
+      pt.l = 0.7;
+      pt.size = 1.5 + Math.random();
+      pt.color = '#7fd0ff';
+      this.particles.push(pt);
+    }
+
+    spawnHeatParticle(x, y) {
+      const pt = new WorldParticle(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT);
+      pt.x = x; pt.y = y;
+      pt.vx = (Math.random() - 0.5) * 1.5;
+      pt.vy = -1 - Math.random() * 1.5;
+      pt.l = 0.85;
+      pt.size = 1.5 + Math.random() * 2;
+      pt.color = Math.random() < 0.5 ? '#ff8b3a' : '#ffd479';
+      this.particles.push(pt);
     }
 
     activatePortal(portal) {
@@ -858,7 +1215,8 @@ const InteractiveWorld = (() => {
         this.computerGrow = Math.max(0, this.computerGrow - 0.1);
       }
 
-      this.player.update(this.keys, this.terrain, this.platforms, this.portals, this.chests);
+      this.player.update(this.keys, this.terrain, this.platforms, this.portals, this.chests, this.caves);
+      this.updateSurvival();
 
       const tCX = this.player.x + this.player.w / 2 - this.canvas.width * 0.35;
       const tCY = this.player.y + this.player.h / 2 - this.canvas.height * 0.5;
@@ -888,7 +1246,25 @@ const InteractiveWorld = (() => {
       for (const p of this.portals) p.pulse += 0.03;
       for (const c of this.chests) c.pulse += 0.02;
       for (const c of this.crystals) { c.rot += 0.02; c.floatOffset += 0.03; }
+
+      // Shovel pickups.
+      if (this.shovels) {
+        const pcx = this.player.x + this.player.w / 2;
+        const pcy = this.player.y + this.player.h / 2;
+        for (const s of this.shovels) {
+          s.bob += 0.06;
+          if (!s.taken) {
+            const dx = pcx - s.x, dy = pcy - s.y;
+            if (dx * dx + dy * dy < 26 * 26) {
+              s.taken = true;
+              this.player.hasShovel = true;
+              this.showInteraction('🪏 Shovel! Press F to dig', '#ffd479');
+            }
+          }
+        }
+      }
       for (const p of this.particles) p.update();
+      if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
       const daylight = Math.max(0, 1 - Math.abs(this.timeOfDay - 0.5) * 2.5);
       const creatureCtx = {
         player: { x: this.player.x + this.player.w / 2, y: this.player.y + this.player.h / 2 },
@@ -917,18 +1293,67 @@ const InteractiveWorld = (() => {
       this.drawSky(ctx, W, H, cx, cy);
       this.drawBgMountains(ctx, cx, cy, W, H);
       this.drawTerrain(ctx, cx, cy, W, H);
+      this.drawCaves(ctx, cx, cy, W, H);
+      this.drawCaveItems(ctx, cx, cy, W, H);
       this.drawPlatforms(ctx, cx, cy, W, H);
       this.drawCrystals(ctx, cx, cy, W, H);
       this.drawChests(ctx, cx, cy, W, H);
+      this.drawShovels(ctx, cx, cy, W, H);
       this.drawPortals(ctx, cx, cy, W, H);
       this.drawCreatures(ctx, cx, cy, W, H);
       this.player.draw(ctx, cx, cy, this._playerColor);
       if (this.computerGrow > 0.01) this.drawComputer(ctx, cx, cy);
       this.drawParticles(ctx, cx, cy, W, H);
       this.drawWeather(ctx, cx, cy, W, H);
+      // Heat haze: the deeper/hotter it gets, the redder the screen.
+      if (this.heat > 0.25) {
+        ctx.fillStyle = `rgba(255,60,0,${(this.heat - 0.25) * 0.28})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (this.player.deathFlash > 0) {
+        ctx.fillStyle = `rgba(255,0,0,${this.player.deathFlash / 60})`;
+        ctx.fillRect(0, 0, W, H);
+      }
       this.drawInteractions(ctx, W, H);
       this.drawHUD(ctx, W);
+      this.drawSurvivalHud(ctx);
+      if (this.player.hasShovel) this.drawShovelHud(ctx, W, H);
       if (this.showMinimap) this.drawMinimap(ctx, W, H);
+    }
+
+    // Water meter (drains as you sweat) + a HOT warning near lava.
+    drawSurvivalHud(ctx) {
+      const p = this.player;
+      const x = 14, y = 14, bw = 150, bh = 14;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
+      const frac = p.water / p.maxWater;
+      const low = frac < 0.3;
+      ctx.fillStyle = low ? '#ff5a4a' : '#45b7d1';
+      ctx.fillRect(x, y, bw * frac, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('💧 ' + Math.ceil(p.water), x + 6, y + bh / 2 + 1);
+      if (this.heat > 0.55) {
+        ctx.fillStyle = '#ff8b3a';
+        ctx.fillText('🔥 HOT', x + bw + 12, y + bh / 2 + 1);
+      }
+      ctx.restore();
+    }
+
+    drawShovelHud(ctx, W, H) {
+      ctx.save();
+      ctx.font = '12px system-ui, sans-serif';
+      const label = '🪏 F: dig  ·  hold S+F: dig down';
+      const tw = ctx.measureText(label).width + 18;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(12, H - 30, tw, 20);
+      ctx.fillStyle = '#ffd479';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, 21, H - 19);
+      ctx.restore();
     }
 
     // The Terminal portal "grows" into a big monitor the player types at. The
@@ -1161,6 +1586,202 @@ const InteractiveWorld = (() => {
           const gx = x + Math.sin(g * 0.7 + x * 0.05) * 4;
           ctx.fillRect(gx - cx, ty - cy - 2 - g * 3, 2, 3);
         }
+      }
+    }
+
+    // Carve the caves out of the rock fill: a lighter rocky rim, then the dark
+    // interior, then a faint ambient glow and crystals in chambers for depth.
+    drawCaves(ctx, cx, cy, W, H) {
+      if (!this.caves) return;
+      const onScreen = (x, y, r) =>
+        x - cx > -r - 60 && x - cx < W + r + 60 && y - cy > -r - 60 && y - cy < H + r + 60;
+
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+
+      const digHoles = this.caves.digHoles || [];
+      const rooms = this.caves.chambers.concat(this.caves.pockets || []);
+      const lavaY = this.caves.lavaY || (CFG.WORLD_HEIGHT - 140);
+
+      // 1) rocky rim (slightly lighter, drawn wider so it peeks around the cave)
+      ctx.strokeStyle = 'rgba(58,40,36,0.95)';
+      for (const t of this.caves.tunnels) {
+        ctx.lineWidth = t.r * 2 + 9;
+        ctx.beginPath();
+        ctx.moveTo(t.ax - cx, t.ay - cy);
+        ctx.lineTo(t.bx - cx, t.by - cy);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(58,40,36,0.95)';
+      for (const c of rooms) {
+        if (!onScreen(c.x, c.y, c.r)) continue;
+        ctx.beginPath();
+        ctx.arc(c.x - cx, c.y - cy, c.r + 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      for (const d of digHoles) {
+        if (!onScreen(d.x, d.y, d.r)) continue;
+        ctx.beginPath();
+        ctx.arc(d.x - cx, d.y - cy, d.r + 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 2) dark cave interior
+      ctx.strokeStyle = '#0b0810';
+      for (const t of this.caves.tunnels) {
+        ctx.lineWidth = t.r * 2;
+        ctx.beginPath();
+        ctx.moveTo(t.ax - cx, t.ay - cy);
+        ctx.lineTo(t.bx - cx, t.by - cy);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#0b0810';
+      for (const c of rooms) {
+        if (!onScreen(c.x, c.y, c.r)) continue;
+        ctx.beginPath();
+        ctx.arc(c.x - cx, c.y - cy, c.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      for (const d of digHoles) {
+        if (!onScreen(d.x, d.y, d.r)) continue;
+        ctx.beginPath();
+        ctx.arc(d.x - cx, d.y - cy, d.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 3) per-room detail: boulders, stalactites, ambient glow, crystals, lava
+      for (const c of rooms) {
+        if (!onScreen(c.x, c.y, c.r)) continue;
+        const gx = c.x - cx, gy = c.y - cy;
+
+        // boulders (more in deeper rooms)
+        ctx.fillStyle = '#1b1620';
+        for (const b of (c.boulders || [])) {
+          ctx.beginPath();
+          ctx.ellipse(gx + b.dx, gy + b.dy, b.r, b.r * 0.7, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // stalactites / stalagmites
+        ctx.fillStyle = 'rgba(40,28,26,0.95)';
+        for (const s of (c.stalactites || [])) {
+          const sx = gx + s.dx;
+          const topY = s.up ? gy + c.r : gy - c.r;
+          const tipY = s.up ? topY - s.len : topY + s.len;
+          ctx.beginPath();
+          ctx.moveTo(sx - s.w / 2, topY);
+          ctx.lineTo(sx + s.w / 2, topY);
+          ctx.lineTo(sx, tipY);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // lava: rooms dipping below the lava line glow molten at the bottom
+        if (c.y + c.r > lavaY) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(gx, gy, c.r, 0, Math.PI * 2);
+          ctx.clip();
+          const surfY = (lavaY - cy) + Math.sin(this.time * 2 + c.x) * 3;
+          const lg = ctx.createLinearGradient(0, surfY, 0, gy + c.r);
+          lg.addColorStop(0, '#ffae3a');
+          lg.addColorStop(0.4, '#ff5a14');
+          lg.addColorStop(1, '#6e1400');
+          ctx.fillStyle = lg;
+          ctx.fillRect(gx - c.r, surfY, c.r * 2, c.r * 2);
+          ctx.fillStyle = 'rgba(255,170,60,0.55)';
+          ctx.fillRect(gx - c.r, surfY - 3, c.r * 2, 4);
+          ctx.restore();
+        }
+
+        const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, c.r);
+        grad.addColorStop(0, c.y + c.r > lavaY ? 'rgba(255,120,40,0.16)' : 'rgba(78,205,196,0.12)');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(gx, gy, c.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (const cr of (c.crystals || [])) {
+          ctx.fillStyle = cr.color;
+          ctx.shadowColor = cr.color;
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.arc(gx + cr.dx, gy + cr.dy, cr.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+      }
+      ctx.restore();
+    }
+
+    drawCaveItems(ctx, cx, cy, W, H) {
+      const onScreen = (x, y) => x - cx > -40 && x - cx < W + 40 && y - cy > -40 && y - cy < H + 40;
+      // chests
+      for (const c of (this.caveChests || [])) {
+        if (!onScreen(c.x, c.y)) continue;
+        const px = c.x - cx, py = c.y - cy;
+        ctx.save();
+        ctx.shadowColor = '#ffd479';
+        ctx.shadowBlur = c.open ? 16 : 8 + Math.sin(c.pulse) * 4;
+        ctx.fillStyle = '#7a5a2a';
+        ctx.fillRect(px, py, c.w, c.h);
+        ctx.fillStyle = '#caa055';
+        ctx.fillRect(px, py, c.w, c.open ? 3 : 6);
+        if (c.open) {
+          ctx.fillStyle = '#ffe9a8';
+          ctx.fillRect(px + 3, py - 4, c.w - 6, 4);
+        }
+        ctx.restore();
+      }
+      // buckets
+      for (const b of (this.buckets || [])) {
+        if (!onScreen(b.x, b.y)) continue;
+        const px = b.x - cx, py = b.y - cy + Math.sin(b.bob) * 2;
+        ctx.save();
+        ctx.fillStyle = '#6a4a2a';
+        ctx.beginPath();
+        ctx.moveTo(px - 8, py - 8);
+        ctx.lineTo(px + 8, py - 8);
+        ctx.lineTo(px + 6, py + 8);
+        ctx.lineTo(px - 6, py + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#45b7d1';
+        ctx.shadowColor = '#45b7d1';
+        ctx.shadowBlur = 8;
+        ctx.fillRect(px - 7, py - 7, 14, 4);
+        ctx.restore();
+      }
+    }
+
+    drawShovels(ctx, cx, cy, W, H) {
+      if (!this.shovels) return;
+      for (const s of this.shovels) {
+        if (s.taken) continue;
+        const sx = s.x - cx, sy = s.y - cy + Math.sin(s.bob) * 3;
+        if (sx < -30 || sx > W + 30 || sy < -30 || sy > H + 30) continue;
+        ctx.save();
+        // glow
+        ctx.shadowColor = '#ffd479';
+        ctx.shadowBlur = 12;
+        // handle
+        ctx.strokeStyle = '#8a6a40';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 12);
+        ctx.lineTo(sx, sy + 8);
+        ctx.stroke();
+        // blade
+        ctx.fillStyle = '#cfd6dd';
+        ctx.beginPath();
+        ctx.moveTo(sx - 5, sy + 6);
+        ctx.lineTo(sx + 5, sy + 6);
+        ctx.lineTo(sx, sy + 14);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
       }
     }
 
@@ -1533,7 +2154,7 @@ const InteractiveWorld = (() => {
     }
   }
 
-  return { WorldEngine, Player, generateTerrain, getTerrainY };
+  return { WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {
