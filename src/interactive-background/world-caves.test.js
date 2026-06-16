@@ -1,6 +1,6 @@
 const InteractiveWorld = require('./world-engine.js');
 
-const { generateTerrain, generateCaves, caveCarved, isRockAt } = InteractiveWorld;
+const { generateTerrain, generateCaves, caveCarved, isRockAt, materialAt, digCellKey } = InteractiveWorld;
 
 describe('cave system', () => {
   const terrain = generateTerrain(5000);
@@ -29,6 +29,28 @@ describe('cave system', () => {
     const pk = caves.pockets[0];
     // pocket interior is carved (walkable) space
     expect(caveCarved(caves, pk.x, pk.y)).toBe(true);
+  });
+
+  it('keys dig progress to grid cells so running does not reset chips', () => {
+    const cell = 16;
+    const start = digCellKey(100, 200, cell);
+    // nudges within the same cell while the player runs
+    expect(digCellKey(108, 205, cell)).toEqual(start);
+    expect(digCellKey(111, 207, cell)).toEqual(start);
+    // crossing into the next cell is a fresh target
+    expect(digCellKey(112, 200, cell)).not.toEqual(start);
+  });
+
+  it('grades dig material from soft near the surface to hard deep down', () => {
+    const x = 50;
+    const surf = InteractiveWorld.getTerrainY(terrain, x);
+    const shallow = materialAt(terrain, x, surf + 10);
+    const deep = materialAt(terrain, x, surf + 700);
+    const lava = materialAt(terrain, x, 1400);
+    expect(shallow.hardness).toBeLessThanOrEqual(2);     // sand/dirt up top
+    expect(deep.hardness).toBeGreaterThan(shallow.hardness);
+    expect(lava.name).toBe('basalt');                    // brutal near lava
+    expect(lava.hardness).toBeGreaterThan(deep.hardness);
   });
 
   it('treats a freshly dug hole as walkable space', () => {

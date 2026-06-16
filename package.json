@@ -7,6 +7,7 @@
     "start": "electron electron/main.js",
     "serve": "npx serve .",
     "dev": "npx serve tools/wallpaper-studio",
+    "cavesweat": "npm start --prefix cavesweat",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/ tools/",
