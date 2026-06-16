@@ -3,162 +3,423 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Interactive Background Studio</title>
+  <title>Deepiri Studio — Interactive Wallpaper Designer</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    
-    body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: #0d0d14;
-      color: #e0e0e0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+
+    :root {
+      --primary: #4ecdc4;
+      --primary-dim: rgba(78, 205, 196, 0.15);
+      --secondary: #45b7d1;
+      --accent: #6c5ce7;
+      --bg-deep: #07070d;
+      --bg-surface: #0d0d14;
+      --bg-elevated: rgba(18, 18, 28, 0.85);
+      --bg-glass: rgba(255, 255, 255, 0.03);
+      --border: rgba(255, 255, 255, 0.06);
+      --border-active: rgba(78, 205, 196, 0.3);
+      --text: #e8e8f0;
+      --text-dim: rgba(255, 255, 255, 0.35);
+      --text-muted: rgba(255, 255, 255, 0.5);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.5);
+      --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
+
+    html { height: 100%; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg-deep);
+      color: var(--text);
+      height: 100%;
+      overflow: hidden;
+      background-image:
+        radial-gradient(ellipse at 20% 50%, rgba(78, 205, 196, 0.03) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 20%, rgba(108, 92, 231, 0.03) 0%, transparent 60%);
+    }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(78, 205, 196, 0.3); border-radius: 2px; }
+
+    .app { display: flex; flex-direction: column; height: 100vh; }
 
     header {
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      padding: 20px 30px;
-      border-bottom: 1px solid #2a2a4a;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 24px;
+      background: rgba(7, 7, 13, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      z-index: 100;
+      flex-shrink: 0;
     }
 
-    header h1 {
-      font-size: 1.5rem;
-      font-weight: 600;
-      background: linear-gradient(90deg, #4ecdc4, #45b7d1);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    .logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      color: var(--bg-deep);
     }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .brand h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .brand h1 span { color: var(--primary); }
+
+    .version-badge {
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .indicator .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 6px var(--primary);
+      transition: var(--transition);
+    }
+
+    .indicator .dot.inactive { background: #555; box-shadow: none; }
 
     .container {
       display: flex;
       flex: 1;
-      gap: 0;
+      overflow: hidden;
     }
 
     .sidebar {
-      width: 280px;
-      background: #12121c;
-      padding: 20px;
-      border-right: 1px solid #2a2a4a;
+      width: 290px;
+      background: var(--bg-elevated);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .sidebar-scroll {
+      flex: 1;
       overflow-y: auto;
+      padding: 16px 14px 20px;
     }
 
     .panel {
-      margin-bottom: 24px;
+      margin-bottom: 6px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-glass);
+      overflow: hidden;
+      transition: border-color var(--transition);
     }
 
-    .panel h3 {
-      font-size: 0.85rem;
+    .panel:hover { border-color: rgba(255,255,255,0.08); }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 0.75rem;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #888;
-      margin-bottom: 12px;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      transition: color var(--transition);
     }
 
-    .control-group {
-      margin-bottom: 16px;
+    .panel-header:hover { color: var(--text); }
+
+    .panel-header .icon { font-size: 0.85rem; width: 18px; text-align: center; flex-shrink: 0; }
+
+    .panel-header .arrow {
+      margin-left: auto;
+      font-size: 0.6rem;
+      transition: transform var(--transition);
+      color: var(--text-dim);
     }
+
+    .panel-header .arrow.open { transform: rotate(90deg); }
+
+    .panel-body {
+      padding: 0 12px 10px;
+      display: none;
+    }
+
+    .panel-body.open { display: block; }
+
+    .control-group { margin-bottom: 10px; }
+    .control-group:last-child { margin-bottom: 0; }
 
     .control-group label {
-      display: block;
-      font-size: 0.8rem;
-      color: #aaa;
-      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      letter-spacing: 0.01em;
+    }
+
+    .control-group label .val {
+      color: var(--text-dim);
+      font-weight: 500;
+      font-size: 0.7rem;
     }
 
     input[type="range"] {
       width: 100%;
-      height: 4px;
-      background: #2a2a4a;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
       border-radius: 2px;
       appearance: none;
+      outline: none;
+      transition: background var(--transition);
     }
 
     input[type="range"]::-webkit-slider-thumb {
       appearance: none;
-      width: 14px;
-      height: 14px;
-      background: #4ecdc4;
+      width: 12px;
+      height: 12px;
+      background: var(--primary);
       border-radius: 50%;
       cursor: pointer;
+      border: 2px solid var(--bg-deep);
+      box-shadow: 0 0 8px rgba(78, 205, 196, 0.3);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+      box-shadow: 0 0 14px rgba(78, 205, 196, 0.5);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 12px; height: 12px;
+      background: var(--primary);
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid var(--bg-deep);
     }
 
     input[type="color"] {
       width: 100%;
-      height: 32px;
-      border: none;
-      border-radius: 4px;
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
       cursor: pointer;
-      background: #2a2a4a;
+      background: transparent;
+      padding: 2px;
     }
 
-    input[type="text"], input[type="number"], select {
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+    input[type="number"], input[type="text"], select {
       width: 100%;
-      padding: 8px 12px;
-      background: #1a1a2e;
-      border: 1px solid #2a2a4a;
-      border-radius: 4px;
-      color: #e0e0e0;
-      font-size: 0.85rem;
+      padding: 6px 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.78rem;
+      transition: border-color var(--transition), background var(--transition);
     }
 
-    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+    input[type="number"]:focus, input[type="text"]:focus, select:focus {
       outline: none;
-      border-color: #4ecdc4;
+      border-color: var(--border-active);
+      background: rgba(78, 205, 196, 0.05);
     }
+
+    select { cursor: pointer; }
+    select option { background: var(--bg-surface); color: var(--text); }
+
+    .mode-toggle {
+      display: flex;
+      background: rgba(255,255,255,0.04);
+      border-radius: 8px;
+      padding: 3px;
+      border: 1px solid var(--border);
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 7px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all var(--transition);
+      text-align: center;
+    }
+
+    .mode-btn.active {
+      background: var(--primary);
+      color: var(--bg-deep);
+      box-shadow: 0 2px 10px rgba(78, 205, 196, 0.25);
+    }
+
+    .mode-btn:not(.active):hover { color: var(--text); }
+
+    .color-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .color-row .control-group { flex: 1; }
 
     .btn {
-      padding: 10px 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 16px;
       border: none;
-      border-radius: 6px;
-      font-size: 0.85rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.78rem;
       font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--transition);
+      white-space: nowrap;
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, #4ecdc4, #45b7d1);
-      color: #0d0d14;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: var(--bg-deep);
     }
 
     .btn-primary:hover {
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(78, 205, 196, 0.3);
+      box-shadow: 0 4px 16px rgba(78, 205, 196, 0.35);
     }
 
+    .btn-primary:active { transform: translateY(0); }
+
     .btn-secondary {
-      background: #2a2a4a;
-      color: #e0e0e0;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      color: var(--text);
     }
 
     .btn-secondary:hover {
-      background: #3a3a5a;
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.12);
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 0.7rem;
     }
 
     .btn-group {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
+
+    .btn-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .btn-row .btn { flex: 1; min-width: 0; }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .preset-btn {
+      padding: 8px 8px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    .preset-btn .preset-icon { display: block; font-size: 1rem; margin-bottom: 2px; }
+
+    .preset-btn:hover {
+      border-color: var(--border-active);
+      background: var(--primary-dim);
+      color: var(--text);
+    }
+
+    .preset-btn:active { transform: scale(0.97); }
 
     .canvas-area {
       flex: 1;
       display: flex;
       flex-direction: column;
-      padding: 20px;
-      gap: 20px;
+      padding: 16px;
+      gap: 12px;
+      min-width: 0;
     }
 
     .canvas-container {
       flex: 1;
-      background: #1a1a2e;
-      border-radius: 12px;
-      border: 1px solid #2a2a4a;
+      background: var(--bg-surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
       position: relative;
       overflow: hidden;
-      min-height: 400px;
+      min-height: 300px;
+      box-shadow: inset 0 0 60px rgba(0,0,0,0.4);
     }
 
     #preview-canvas {
@@ -169,248 +430,401 @@
       left: 0;
     }
 
+    .canvas-overlay {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 5px 14px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.6s;
+      white-space: nowrap;
+    }
+
+    .canvas-container:hover .canvas-overlay { opacity: 1; }
+
     .info-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 16px;
-      background: #12121c;
-      border-radius: 8px;
-      border: 1px solid #2a2a4a;
+      padding: 10px 16px;
+      background: var(--bg-elevated);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      flex-shrink: 0;
     }
 
     .info-bar .status {
       display: flex;
       align-items: center;
       gap: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
     }
 
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #4ecdc4;
-    }
-
-    .status-dot.inactive {
-      background: #666;
-    }
-
-    .export-options {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
+    .export-grid {
+      display: flex;
+      gap: 4px;
     }
 
     .export-btn {
-      padding: 12px;
-      background: #1a1a2e;
-      border: 1px solid #2a2a4a;
-      border-radius: 6px;
-      color: #e0e0e0;
-      font-size: 0.75rem;
+      padding: 6px 10px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      font-size: 0.62rem;
+      font-weight: 600;
       text-align: center;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--transition);
+      line-height: 1.2;
+      min-width: 40px;
     }
 
     .export-btn:hover {
-      border-color: #4ecdc4;
-      background: #2a2a4a;
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-dim);
     }
 
-    .export-btn span {
-      display: block;
-      font-size: 1.1rem;
-      margin-bottom: 4px;
-    }
+    .export-btn .ext { font-size: 0.72rem; display: block; }
 
-    .file-input {
-      display: none;
-    }
+    .file-input { display: none; }
 
-    .btn-upload {
-      background: #1a1a2e;
-      border: 1px dashed #4ecdc4;
-      color: #4ecdc4;
-      padding: 20px;
-      border-radius: 8px;
+    .upload-area {
+      border: 1px dashed rgba(78, 205, 196, 0.25);
+      border-radius: var(--radius-sm);
+      padding: 14px;
       text-align: center;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all var(--transition);
+      font-size: 0.72rem;
+      color: var(--text-dim);
     }
 
-    .btn-upload:hover {
-      background: rgba(78, 205, 196, 0.1);
+    .upload-area:hover {
+      border-color: var(--primary);
+      background: var(--primary-dim);
+      color: var(--text);
     }
 
-    .preview-section {
-      background: #12121c;
-      border-radius: 8px;
-      padding: 16px;
-      margin-top: 16px;
+    .upload-area .upload-icon { display: block; font-size: 1.1rem; margin-bottom: 4px; }
+
+    .sidebar-footer {
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      text-align: center;
+      flex-shrink: 0;
     }
 
-    .preview-section h4 {
-      font-size: 0.8rem;
-      color: #888;
-      margin-bottom: 12px;
+    @media (max-width: 900px) {
+      .sidebar { width: 240px; }
+      .export-grid { flex-wrap: wrap; }
     }
 
-    .thumbnail-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .thumbnail {
-      width: 60px;
-      height: 40px;
-      border-radius: 4px;
-      background: #1a1a2e;
-      border: 1px solid #2a2a4a;
-      overflow: hidden;
-    }
-
-    .thumbnail img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
+    @media (max-width: 700px) {
+      .container { flex-direction: column; }
+      .sidebar { width: 100%; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
+      .canvas-area { padding: 10px; }
     }
   </style>
 </head>
 <body>
+  <div class="app">
     <header>
-      <h1>Interactive Background Studio <span style="font-size:0.7rem;color:#888;font-weight:400;background:linear-gradient(none);-webkit-background-clip:unset;-webkit-text-fill-color:unset">v1.0.0</span></h1>
+      <div class="logo"><img src="../../assets/branding/logo.png" alt="Deepiri" style="width:100%;height:100%;border-radius:8px;"></div>
+      <div class="brand">
+        <h1><span>Deepiri</span> Studio</h1>
+        <span class="version-badge">v1.1.0</span>
+      </div>
+      <div class="header-actions">
+        <div class="indicator">
+          <span class="dot" id="status-dot"></span>
+          <span id="status-text">Ready</span>
+        </div>
+      </div>
     </header>
 
-  <div class="container">
-    <aside class="sidebar">
-      <div class="panel">
-        <h3>Canvas Size</h3>
-        <div class="control-group">
-          <label>Width</label>
-          <input type="number" id="canvas-width" value="1280" min="320" max="3840">
-        </div>
-        <div class="control-group">
-          <label>Height</label>
-          <input type="number" id="canvas-height" value="720" min="240" max="2160">
-        </div>
-      </div>
+    <div class="container">
+      <aside class="sidebar">
+        <div class="sidebar-scroll">
+          <div class="panel">
+            <div class="panel-header" data-panel="canvas">
+              <span class="icon">☰</span> Canvas
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="color-row">
+                <div class="control-group">
+                  <label>Width</label>
+                  <input type="number" id="canvas-width" value="1280" min="320" max="3840">
+                </div>
+                <div class="control-group">
+                  <label>Height</label>
+                  <input type="number" id="canvas-height" value="720" min="240" max="2160">
+                </div>
+              </div>
+            </div>
+          </div>
 
-      <div class="panel">
-        <h3>Particles</h3>
-        <div class="control-group">
-          <label>Count: <span id="particle-count-val">200</span></label>
-          <input type="range" id="particle-count" min="50" max="500" value="200">
-        </div>
-        <div class="control-group">
-          <label>Base Size: <span id="particle-size-val">6</span></label>
-          <input type="range" id="particle-size" min="2" max="20" value="6">
-        </div>
-        <div class="control-group">
-          <label>Speed: <span id="speed-val">3</span></label>
-          <input type="range" id="speed" min="1" max="10" value="3">
-        </div>
-      </div>
+          <div class="panel">
+            <div class="panel-header" data-panel="mode">
+              <span class="icon">⚙</span> Mode
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="mode-toggle" id="mode-toggle">
+                <button class="mode-btn" data-mode="particles">Particles</button>
+                <button class="mode-btn active" data-mode="world">World</button>
+              </div>
+            </div>
+          </div>
 
-      <div class="panel">
-        <h3>Colors</h3>
-        <div class="control-group">
-          <label>Primary</label>
-          <input type="color" id="color1" value="#ff6b6b">
-        </div>
-        <div class="control-group">
-          <label>Secondary</label>
-          <input type="color" id="color2" value="#4ecdc4">
-        </div>
-        <div class="control-group">
-          <label>Background</label>
-          <input type="color" id="bg-color" value="#1a1a2e">
-        </div>
-      </div>
+          <div class="panel" id="particle-controls">
+            <div class="panel-header" data-panel="particle">
+              <span class="icon">✦</span> Particles
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="control-group">
+                <label>Count <span class="val" id="particle-count-val">200</span></label>
+                <input type="range" id="particle-count" min="50" max="500" value="200">
+              </div>
+              <div class="control-group">
+                <label>Base Size <span class="val" id="particle-size-val">6</span></label>
+                <input type="range" id="particle-size" min="2" max="20" value="6">
+              </div>
+              <div class="control-group">
+                <label>Speed <span class="val" id="speed-val">3</span></label>
+                <input type="range" id="speed" min="1" max="10" value="3">
+              </div>
+            </div>
+          </div>
 
-      <div class="panel">
-        <h3>Effects</h3>
-        <div class="control-group">
-          <label>Grid</label>
-          <select id="grid-effect">
-            <option value="subtle">Subtle</option>
-            <option value="none">None</option>
-            <option value="prominent">Prominent</option>
-          </select>
-        </div>
-        <div class="control-group">
-          <label>Mouse Glow</label>
-          <input type="range" id="mouse-glow" min="0" max="100" value="50">
-        </div>
-      </div>
+          <div class="panel" id="world-controls">
+            <div class="panel-header" data-panel="world">
+              <span class="icon">🌍</span> World Generation
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="control-group">
+                <label>World Width <span class="val" id="world-width-val">5000</span></label>
+                <input type="range" id="world-width" min="2000" max="10000" value="5000">
+              </div>
+              <div class="control-group">
+                <label>Platforms <span class="val" id="platform-count-val">10</span></label>
+                <input type="range" id="platform-count" min="3" max="20" value="10">
+              </div>
+              <div class="control-group">
+                <label>Portals <span class="val" id="portal-count-val">6</span></label>
+                <input type="range" id="portal-count" min="2" max="8" value="6">
+              </div>
+              <div class="control-group">
+                <label>Atmosphere Particles <span class="val" id="world-particles-val">60</span></label>
+                <input type="range" id="world-particles" min="10" max="150" value="60">
+              </div>
+              <div class="control-group">
+                <label>Creatures <span class="val" id="creature-count-val">15</span></label>
+                <input type="range" id="creature-count" min="5" max="30" value="15">
+              </div>
+              <div class="control-group">
+                <label>Chests <span class="val" id="chest-count-val">5</span></label>
+                <input type="range" id="chest-count" min="1" max="12" value="5">
+              </div>
+              <div class="control-group">
+                <label>Crystals <span class="val" id="crystal-count-val">8</span></label>
+                <input type="range" id="crystal-count" min="2" max="16" value="8">
+              </div>
+            </div>
+          </div>
 
-      <div class="panel">
-        <h3>Export All Formats</h3>
-        <div class="btn-group">
-          <button class="btn btn-primary" id="export-all">Generate All</button>
-        </div>
-      </div>
+          <div class="panel">
+            <div class="panel-header" data-panel="world-visuals">
+              <span class="icon">🎨</span> World Visuals
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="control-group">
+                <label>Biome</label>
+                <select id="world-biome">
+                  <option value="auto">Auto (procedural)</option>
+                  <option value="forest">Forest</option>
+                  <option value="desert">Desert</option>
+                  <option value="tundra">Tundra</option>
+                  <option value="plains">Plains</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label>Weather</label>
+                <select id="world-weather">
+                  <option value="auto">Auto (cycles)</option>
+                  <option value="clear">Clear</option>
+                  <option value="rain">Rain</option>
+                  <option value="snow">Snow</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label>Time of Day <span class="val" id="time-val">0.30</span></label>
+                <input type="range" id="world-time" min="0" max="1" step="0.01" value="0.3">
+              </div>
+              <div style="margin-bottom:8px"><label style="color:var(--text-dim);font-size:0.7rem;margin-bottom:6px">Sky Colors</label></div>
+              <div class="color-row" style="margin-bottom:6px">
+                <div class="control-group">
+                  <label>Top</label>
+                  <input type="color" id="world-sky-top" value="#0a0a1a">
+                </div>
+                <div class="control-group">
+                  <label>Bottom</label>
+                  <input type="color" id="world-sky-bottom" value="#1a2a3e">
+                </div>
+              </div>
+              <div style="margin-bottom:8px"><label style="color:var(--text-dim);font-size:0.7rem;margin-bottom:6px">Ground Colors</label></div>
+              <div class="color-row" style="margin-bottom:6px">
+                <div class="control-group">
+                  <label>Top</label>
+                  <input type="color" id="world-ground-top" value="#3a7d5a">
+                </div>
+                <div class="control-group">
+                  <label>Bottom</label>
+                  <input type="color" id="world-ground-bottom" value="#1a0a0a">
+                </div>
+              </div>
+              <div class="control-group">
+                <label>Player Color</label>
+                <input type="color" id="world-player-color" value="#4ecdc4">
+              </div>
+            </div>
+          </div>
 
-      <div class="panel">
-        <h3>Load Background</h3>
-        <input type="file" id="load-bg" class="file-input" accept="image/*">
-        <label for="load-bg" class="btn-upload">
-          Click to load an existing interactive background
-        </label>
-      </div>
-    </aside>
+          <div class="panel">
+            <div class="panel-header" data-panel="presets">
+              <span class="icon">⚡</span> Presets
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="preset-grid">
+                <button class="preset-btn" data-preset="fantasy-forest"><span class="preset-icon">🌲</span>Fantasy Forest</button>
+                <button class="preset-btn" data-preset="desert-dunes"><span class="preset-icon">🏜️</span>Desert Dunes</button>
+                <button class="preset-btn" data-preset="frozen-tundra"><span class="preset-icon">❄️</span>Frozen Tundra</button>
+                <button class="preset-btn" data-preset="golden-plains"><span class="preset-icon">🌾</span>Golden Plains</button>
+                <button class="preset-btn" data-preset="neon-nights"><span class="preset-icon">🌃</span>Neon Nights</button>
+                <button class="preset-btn" data-preset="rainy-mood"><span class="preset-icon">🌧️</span>Rainy Mood</button>
+              </div>
+            </div>
+          </div>
 
-    <main class="canvas-area">
-      <div class="canvas-container" id="canvas-wrapper">
-        <canvas id="preview-canvas"></canvas>
-      </div>
+          <div class="panel">
+            <div class="panel-header" data-panel="colors">
+              <span class="icon">🎭</span> Particle Colors
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="control-group">
+                <label>Primary</label>
+                <input type="color" id="color1" value="#ff6b6b">
+              </div>
+              <div class="control-group">
+                <label>Secondary</label>
+                <input type="color" id="color2" value="#4ecdc4">
+              </div>
+              <div class="control-group">
+                <label>Background</label>
+                <input type="color" id="bg-color" value="#1a1a2e">
+              </div>
+            </div>
+          </div>
 
-      <div class="info-bar">
-        <div class="status">
-          <div class="status-dot" id="status-dot"></div>
-          <span id="status-text">Ready - Click on canvas to interact</span>
+          <div class="panel" id="particle-effects">
+            <div class="panel-header" data-panel="effects">
+              <span class="icon">✨</span> Effects
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="control-group">
+                <label>Grid</label>
+                <select id="grid-effect">
+                  <option value="subtle">Subtle</option>
+                  <option value="none">None</option>
+                  <option value="prominent">Prominent</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label>Mouse Glow <span class="val" id="mouse-glow-val">50</span></label>
+                <input type="range" id="mouse-glow" min="0" max="100" value="50">
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header" data-panel="export">
+              <span class="icon">📦</span> Export All
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <div class="btn-group">
+                <button class="btn btn-primary" id="export-all">Generate All Formats</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header" data-panel="load">
+              <span class="icon">📂</span> Load
+              <span class="arrow open">▸</span>
+            </div>
+            <div class="panel-body open">
+              <input type="file" id="load-bg" class="file-input" accept="image/*">
+              <label for="load-bg" class="upload-area">
+                <span class="upload-icon">📁</span>
+                Load an existing background
+              </label>
+            </div>
+          </div>
         </div>
-        <div class="export-options">
-          <button class="export-btn" data-format="png">
-            <span>PNG</span>
-            Interactive
-          </button>
-          <button class="export-btn" data-format="svg">
-            <span>SVG</span>
-            Vector
-          </button>
-          <button class="export-btn" data-format="webp">
-            <span>WebP</span>
-            Modern
-          </button>
-          <button class="export-btn" data-format="bmp">
-            <span>BMP</span>
-            Windows
-          </button>
-          <button class="export-btn" data-format="jpg">
-            <span>JPG</span>
-            Standard
-          </button>
-          <button class="export-btn" data-format="wallpaper">
-            <span>WALL</span>
-            Windows
-          </button>
-          <button class="export-btn" data-format="theme">
-            <span>THEME</span>
-            Win Theme
-          </button>
-          <button class="export-btn" data-format="zip">
-            <span>ZIP</span>
-            Bundle
-          </button>
+        <div class="sidebar-footer">Deepiri Lyback &middot; Interactive Wallpaper Engine</div>
+      </aside>
+
+      <main class="canvas-area">
+        <div class="canvas-container" id="canvas-wrapper">
+          <canvas id="preview-canvas"></canvas>
+          <div class="canvas-overlay">Click to interact &middot; WASD &middot; Space to jump</div>
         </div>
-      </div>
-    </main>
+
+        <div class="info-bar">
+          <div class="status">
+            <span id="status-text">Ready</span>
+          </div>
+          <div class="export-grid">
+            <button class="export-btn" data-format="png"><span class="ext">PNG</span>Image</button>
+            <button class="export-btn" data-format="svg"><span class="ext">SVG</span>Vector</button>
+            <button class="export-btn" data-format="webp"><span class="ext">WebP</span>Modern</button>
+            <button class="export-btn" data-format="bmp"><span class="ext">BMP</span>Windows</button>
+            <button class="export-btn" data-format="jpg"><span class="ext">JPG</span>Standard</button>
+            <button class="export-btn" data-format="wallpaper"><span class="ext">WALL</span>Windows</button>
+            <button class="export-btn" data-format="theme"><span class="ext">THEME</span>Theme</button>
+            <button class="export-btn" data-format="zip"><span class="ext">ZIP</span>Bundle</button>
+            <button class="export-btn" data-format="html" style="border-color:rgba(78,205,196,0.4);background:rgba(78,205,196,0.08)"><span class="ext">HTML</span>Standalone</button>
+          </div>
+        </div>
+      </main>
+    </div>
   </div>
 
   <script src="../../src/interactive-background/core-engine.js"></script>
+  <script src="../../src/interactive-background/world-engine.js"></script>
   <script src="../../src/interactive-background/encoder.js"></script>
   <script src="../../src/interactive-background/player.js"></script>
   <script src="export-wallpaper.js"></script>
@@ -559,44 +973,118 @@
     `;
 
     let engine = null;
+    let currentMode = 'world';
+
+    const BIOME_PRESETS = {
+      'fantasy-forest': { biome: 'forest', skyTop: '#0a1628', skyBottom: '#1a3a2e', groundTop: '#3a7d5a', groundBottom: '#1a0a0a', weather: 'clear', time: 0.35 },
+      'desert-dunes': { biome: 'desert', skyTop: '#1a1410', skyBottom: '#3a3020', groundTop: '#c4a65a', groundBottom: '#6a4e20', weather: 'clear', time: 0.5 },
+      'frozen-tundra': { biome: 'tundra', skyTop: '#0a0a1a', skyBottom: '#1a2a3e', groundTop: '#8ab0c4', groundBottom: '#3a4a5e', weather: 'snow', time: 0.4 },
+      'golden-plains': { biome: 'plains', skyTop: '#0a1418', skyBottom: '#2a3a28', groundTop: '#5aaa6b', groundBottom: '#2a3a2a', weather: 'clear', time: 0.45 },
+      'neon-nights': { biome: 'forest', skyTop: '#050510', skyBottom: '#0a0a2a', groundTop: '#1a2a3a', groundBottom: '#0a0a1a', weather: 'clear', time: 0.1 },
+      'rainy-mood': { biome: 'plains', skyTop: '#0a0a12', skyBottom: '#1a1a2a', groundTop: '#3a5a4a', groundBottom: '#1a1a1a', weather: 'rain', time: 0.25 }
+    };
+
+    function toggleControls(mode) {
+      const particleControls = document.getElementById('particle-controls');
+      const worldControls = document.getElementById('world-controls');
+      const particleEffects = document.getElementById('particle-effects');
+      if (mode === 'particles') {
+        particleControls.style.display = '';
+        worldControls.style.display = 'none';
+        particleEffects.style.display = '';
+      } else {
+        particleControls.style.display = 'none';
+        worldControls.style.display = '';
+        particleEffects.style.display = 'none';
+      }
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    }
 
     function getConfig() {
-      return {
-        particleCount: parseInt(document.getElementById('particle-count').value),
-        particleSize: parseInt(document.getElementById('particle-size').value),
-        speed: parseInt(document.getElementById('speed').value),
+      const mode = currentMode;
+      const base = {
+        mode: mode,
         colors: [
           document.getElementById('color1').value,
           document.getElementById('color2').value,
           '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'
-        ],
-        bgColor: document.getElementById('bg-color').value,
-        gridEffect: document.getElementById('grid-effect').value,
-        glow: parseInt(document.getElementById('mouse-glow').value) / 100
+        ]
       };
+      if (mode === 'particles') {
+        return {
+          ...base,
+          particleCount: parseInt(document.getElementById('particle-count').value),
+          particleSize: parseInt(document.getElementById('particle-size').value),
+          speed: parseInt(document.getElementById('speed').value),
+          bgColor: document.getElementById('bg-color').value,
+          gridEffect: document.getElementById('grid-effect').value,
+          glow: parseInt(document.getElementById('mouse-glow').value) / 100
+        };
+      } else {
+        return {
+          ...base,
+          mode: 'world',
+          worldWidth: parseInt(document.getElementById('world-width').value),
+          platformCount: parseInt(document.getElementById('platform-count').value),
+          portalCount: parseInt(document.getElementById('portal-count').value),
+          particleCount: parseInt(document.getElementById('world-particles').value),
+          creatureCount: parseInt(document.getElementById('creature-count').value),
+          chestCount: parseInt(document.getElementById('chest-count').value),
+          crystalCount: parseInt(document.getElementById('crystal-count').value),
+          biome: document.getElementById('world-biome').value,
+          weather: document.getElementById('world-weather').value,
+          timeOfDay: parseFloat(document.getElementById('world-time').value),
+          skyTop: document.getElementById('world-sky-top').value,
+          skyBottom: document.getElementById('world-sky-bottom').value,
+          groundTop: document.getElementById('world-ground-top').value,
+          groundBottom: document.getElementById('world-ground-bottom').value,
+          playerColor: document.getElementById('world-player-color').value
+        };
+      }
     }
 
     function generateEngineCode(config) {
-      const gridStyle = config.gridEffect === 'prominent'
-        ? "this.ctx.strokeStyle = 'rgba(255,255,255,0.08)'"
-        : "this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'";
-      
-      let code = ENGINE_CODE
-        .replace('{{PARTICLE_COUNT}}', config.particleCount)
-        .replace('{{PARTICLE_SIZE}}', config.particleSize)
-        .replace('{{PARTICLE_SIZE_MIN}}', config.particleSize / 2)
-        .replace('{{SPEED}}', config.speed)
-        .replace('{{BG_COLOR}}', config.bgColor)
-        .replace('{{GLOW_ALPHA}}', config.glow * 0.2)
-        .replace("this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'", gridStyle);
-
-      if (config.gridEffect === 'none') {
-        code = code.replace('{{GRID_CODE}}', '');
+      if (config.mode === 'particles') {
+        const gridStyle = config.gridEffect === 'prominent'
+          ? "this.ctx.strokeStyle = 'rgba(255,255,255,0.08)'"
+          : "this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'";
+        let code = ENGINE_CODE
+          .replace('{{PARTICLE_COUNT}}', config.particleCount)
+          .replace('{{PARTICLE_SIZE}}', config.particleSize)
+          .replace('{{PARTICLE_SIZE_MIN}}', config.particleSize / 2)
+          .replace('{{SPEED}}', config.speed)
+          .replace('{{BG_COLOR}}', config.bgColor)
+          .replace('{{GLOW_ALPHA}}', config.glow * 0.2)
+          .replace("this.ctx.strokeStyle = 'rgba(255,255,255,0.03)'", gridStyle);
+        if (config.gridEffect === 'none') {
+          code = code.replace('{{GRID_CODE}}', '');
+        } else {
+          code = code.replace('{{GRID_CODE}}', 'this.drawGrid();');
+        }
+        return code;
       } else {
-        code = code.replace('{{GRID_CODE}}', 'this.drawGrid();');
+        let code = InteractiveWorld.__source__ || InteractiveWorld.toString();
+        if (!code || code === '[object Object]') {
+          try { code = InteractiveWorld.WorldEngine.toString(); } catch(e) {}
+        }
+        const defaults = {
+          WORLD_WIDTH: config.worldWidth || 5000,
+          WORLD_PLATFORM_COUNT: config.platformCount || 10,
+          WORLD_PORTAL_COUNT: config.portalCount || 6,
+          WORLD_PARTICLE_COUNT: config.particleCount || 60,
+          WORLD_CREATURE_COUNT: config.creatureCount || 15,
+          WORLD_CHEST_COUNT: config.chestCount || 5,
+          WORLD_CRYSTAL_COUNT: config.crystalCount || 8,
+          WORLD_SKY_TOP: config.skyTop || '#0a0a1a',
+          WORLD_SKY_BOTTOM: config.skyBottom || '#1a2a3e',
+          WORLD_GROUND_TOP: config.groundTop || '#3a7d5a',
+          WORLD_GROUND_BOTTOM: config.groundBottom || '#1a0a0a',
+          WORLD_PLAYER_COLOR: config.playerColor || '#4ecdc4',
+          DEFAULT_COLORS: config.colors || ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
+        };
+        code = 'const DEEPIRI_DEFAULTS = ' + JSON.stringify(defaults) + ';\n' + code;
+        return code;
       }
-
-      return code;
     }
 
     function initCanvas() {
@@ -606,39 +1094,121 @@
       canvas.height = height;
     }
 
+    function applyWorldConfig(config) {
+      if (!engine || !engine.applyWorldConfig) return;
+      engine.applyWorldConfig({
+        biome: config.biome,
+        weather: config.weather,
+        timeOfDay: config.timeOfDay,
+        skyTop: config.skyTop,
+        skyBottom: config.skyBottom,
+        groundTop: config.groundTop,
+        groundBottom: config.groundBottom,
+        playerColor: config.playerColor
+      });
+    }
+
+    function applyWorldDefaults(engine) {
+      if (!engine) return;
+      if (engine._defaultsApplied) return;
+      const config = getConfig();
+      if (config.mode === 'world' && engine.applyWorldConfig) {
+        engine.applyWorldConfig({
+          biome: config.biome,
+          weather: config.weather,
+          timeOfDay: config.timeOfDay,
+          skyTop: config.skyTop,
+          skyBottom: config.skyBottom,
+          groundTop: config.groundTop,
+          groundBottom: config.groundBottom,
+          playerColor: config.playerColor
+        });
+      }
+      engine._defaultsApplied = true;
+    }
+
     function startEngine() {
-      if (engine) engine.stop();
-      engine = new InteractiveEngine.Engine(canvas, { interactive: true });
+      if (engine) { engine.stop(); engine._defaultsApplied = false; }
+      const mode = currentMode;
+      if (mode === 'world') {
+        engine = new InteractiveWorld.WorldEngine(canvas, { interactive: true });
+        document.getElementById('status-text').textContent = 'World mode — WASD to move · Space to jump · Click/E to interact';
+        document.getElementById('status-dot').className = 'dot';
+        applyWorldDefaults(engine);
+      } else {
+        engine = new InteractiveEngine.Engine(canvas, { interactive: true });
+        document.getElementById('status-text').textContent = 'Particle mode — Click to interact';
+        document.getElementById('status-dot').className = 'dot';
+      }
       engine.start();
       document.getElementById('status-dot').classList.remove('inactive');
-      document.getElementById('status-text').textContent = 'Running - Click on canvas to interact';
     }
+
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentMode = btn.dataset.mode;
+        toggleControls(currentMode);
+        startEngine();
+      });
+    });
 
     document.getElementById('particle-count').addEventListener('input', (e) => {
       document.getElementById('particle-count-val').textContent = e.target.value;
     });
-
     document.getElementById('particle-size').addEventListener('input', (e) => {
       document.getElementById('particle-size-val').textContent = e.target.value;
     });
-
     document.getElementById('speed').addEventListener('input', (e) => {
       document.getElementById('speed-val').textContent = e.target.value;
+    });
+    document.getElementById('world-width').addEventListener('input', (e) => {
+      document.getElementById('world-width-val').textContent = e.target.value;
+    });
+    document.getElementById('platform-count').addEventListener('input', (e) => {
+      document.getElementById('platform-count-val').textContent = e.target.value;
+    });
+    document.getElementById('portal-count').addEventListener('input', (e) => {
+      document.getElementById('portal-count-val').textContent = e.target.value;
+    });
+    document.getElementById('world-particles').addEventListener('input', (e) => {
+      document.getElementById('world-particles-val').textContent = e.target.value;
+    });
+    document.getElementById('creature-count').addEventListener('input', (e) => {
+      document.getElementById('creature-count-val').textContent = e.target.value;
+    });
+    document.getElementById('chest-count').addEventListener('input', (e) => {
+      document.getElementById('chest-count-val').textContent = e.target.value;
+    });
+    document.getElementById('crystal-count').addEventListener('input', (e) => {
+      document.getElementById('crystal-count-val').textContent = e.target.value;
+    });
+    document.getElementById('mouse-glow').addEventListener('input', (e) => {
+      document.getElementById('mouse-glow-val').textContent = e.target.value;
+    });
+    document.getElementById('world-time').addEventListener('input', (e) => {
+      document.getElementById('time-val').textContent = parseFloat(e.target.value).toFixed(2);
     });
 
     document.querySelectorAll('.export-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const format = btn.dataset.format;
         const config = getConfig();
-        
+
         canvas.width = parseInt(document.getElementById('canvas-width').value);
         canvas.height = parseInt(document.getElementById('canvas-height').value);
-        
-        const tempEngine = new InteractiveEngine.Engine(canvas, { interactive: true });
-        tempEngine.start();
-        
-        await new Promise(r => setTimeout(r, 500));
-        tempEngine.stop();
+
+        const mode = config.mode || 'particles';
+        if (mode === 'world') {
+          const worldEngine = new InteractiveWorld.WorldEngine(canvas, { interactive: true });
+          worldEngine.start();
+          await new Promise(r => setTimeout(r, 500));
+          worldEngine.stop();
+        } else {
+          const tempEngine = new InteractiveEngine.Engine(canvas, { interactive: true });
+          tempEngine.start();
+          await new Promise(r => setTimeout(r, 500));
+          tempEngine.stop();
+        }
 
         const engineCode = generateEngineCode(config);
         let blob, filename;
@@ -682,6 +1252,11 @@
             blob = WallpaperBundler.createZipBundle(tempCanvas, config, engineCode);
             filename = 'my-wallpaper.zip';
             break;
+          case 'html':
+            const htmlContent = WallpaperBundler.generateWallpaperHTML(config);
+            blob = new Blob([htmlContent], { type: 'text/html' });
+            filename = 'deepiri-world-wallpaper.html';
+            break;
         }
 
         const url = URL.createObjectURL(blob);
@@ -696,7 +1271,7 @@
     });
 
     document.getElementById('export-all').addEventListener('click', async () => {
-      const formats = ['png', 'svg', 'webp', 'bmp', 'jpg', 'wallpaper', 'theme', 'zip'];
+      const formats = ['png', 'svg', 'webp', 'bmp', 'jpg', 'wallpaper', 'theme', 'zip', 'html'];
       for (const format of formats) {
         document.querySelector(`[data-format="${format}"]`).click();
         await new Promise(r => setTimeout(r, 500));
@@ -711,15 +1286,58 @@
       const data = await player.loadFromFile(file);
 
       if (data && data.c) {
-        document.getElementById('particle-count').value = data.c.particleCount || 200;
-        document.getElementById('particle-size').value = data.c.particleSize || 6;
-        document.getElementById('speed').value = data.c.speed || 3;
-        document.getElementById('bg-color').value = data.c.bgColor || '#1a1a2e';
+        const mode = data.c.mode || 'particles';
+        currentMode = mode;
+        toggleControls(mode);
+        if (mode === 'particles') {
+          document.getElementById('particle-count').value = data.c.particleCount || 200;
+          document.getElementById('particle-size').value = data.c.particleSize || 6;
+          document.getElementById('speed').value = data.c.speed || 3;
+          document.getElementById('bg-color').value = data.c.bgColor || '#1a1a2e';
+        }
       }
 
       player.start(data?.c || {});
     });
 
+    document.getElementById('canvas-width').addEventListener('change', () => { initCanvas(); });
+    document.getElementById('canvas-height').addEventListener('change', () => { initCanvas(); });
+
+    document.querySelectorAll('.panel-header').forEach(hdr => {
+      hdr.addEventListener('click', () => {
+        const body = hdr.nextElementSibling;
+        const arrow = hdr.querySelector('.arrow');
+        if (body && body.classList.contains('panel-body')) {
+          body.classList.toggle('open');
+          arrow.classList.toggle('open');
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.preset;
+        const preset = BIOME_PRESETS[key];
+        if (!preset) return;
+        if (currentMode !== 'world') {
+          currentMode = 'world';
+          toggleControls('world');
+        }
+        if (preset.biome) document.getElementById('world-biome').value = preset.biome;
+        if (preset.weather) document.getElementById('world-weather').value = preset.weather;
+        if (preset.time !== undefined) {
+          document.getElementById('world-time').value = preset.time;
+          document.getElementById('time-val').textContent = preset.time.toFixed(2);
+        }
+        if (preset.skyTop) document.getElementById('world-sky-top').value = preset.skyTop;
+        if (preset.skyBottom) document.getElementById('world-sky-bottom').value = preset.skyBottom;
+        if (preset.groundTop) document.getElementById('world-ground-top').value = preset.groundTop;
+        if (preset.groundBottom) document.getElementById('world-ground-bottom').value = preset.groundBottom;
+        startEngine();
+      });
+    });
+
+    toggleControls('world');
     initCanvas();
     startEngine();
   </script>
