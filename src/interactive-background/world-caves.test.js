@@ -3,7 +3,8 @@ const InteractiveWorld = require('./world-engine.js');
 const {
   generateTerrain, generateCaves, caveCarved, isRockAt, materialAt, digCellKey,
   inHeavenZone, computeSweatRate, generateShovels, generateCaveShovels,
-  generateSticks, generateCaveSticks
+  generateSticks, generateCaveSticks,
+  generateAscentPlatforms, generateCloudPlatforms, touchesWall
 } = InteractiveWorld;
 
 describe('cave system', () => {
@@ -124,5 +125,14 @@ describe('survival and heaven helpers', () => {
     expect(sticks.length).toBeGreaterThanOrEqual(16);
     expect(shovels.some((s) => s.kind === 'surface')).toBe(true);
     expect(shovels.some((s) => s.kind === 'cave')).toBe(true);
+  });
+
+  it('detects rock walls beside the player for wall grab', () => {
+    const caves = generateCaves(terrain);
+    const x = 4800;
+    const surf = InteractiveWorld.getTerrainY(terrain, x);
+    const y = surf + 200;
+    expect(touchesWall(caves, terrain, x, y, 18, 28, 1)).toBe(true);
+    expect(touchesWall(caves, terrain, x, 50, 18, 28, 1)).toBe(false);
   });
 });

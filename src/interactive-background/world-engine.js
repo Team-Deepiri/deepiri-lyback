@@ -9,6 +9,10 @@ const InteractiveWorld = (() => {
     JUMP_FORCE: DEFAULTS.WORLD_JUMP_FORCE ?? -11,
     MOVE_SPEED: DEFAULTS.WORLD_MOVE_SPEED ?? 4.5,
     MAX_FALL_SPEED: 14,
+    WALL_KICK_SPEED: 6.5,
+    WALL_SLIDE_SPEED: 2.8,
+    WALL_GRAB_FRAMES: 40,
+    WALL_JUMP_IGNORE_FRAMES: 12,
     PLAYER_W: 18,
     PLAYER_H: 28,
     PLATFORM_COUNT: DEFAULTS.WORLD_PLATFORM_COUNT || 10,
@@ -493,6 +497,15 @@ const InteractiveWorld = (() => {
     return true;
   }
 
+  // Probe along the player's side for cave/rock walls (used for wall grab & kick).
+  function touchesWall(caves, heights, x, y, w, h, side) {
+    const probeX = side < 0 ? x - 1 : x + w + 1;
+    for (let oy = 6; oy < h - 2; oy += 7) {
+      if (isRockAt(caves, heights, probeX, y + oy)) return true;
+    }
+    return false;
+  }
+
   const DIG_CELL = 16;
 
   // Grid cell for dig progress — keyed by cell, not exact point, so running
@@ -878,34 +891,55 @@ const InteractiveWorld = (() => {
       this.freeze = 0;
       this.sticks = 0;
       this.deathFlash = 0;
+      this.wallSide = 0;
+      this.wallGrabTimer = 0;
+      this._wallJumpIgnore = 0;
     }
 
     update(keys, heights, platforms, portals, chests, caves, time) {
       const rubbing = keys.r && this.sticks >= 2;
       const moveX = rubbing ? 0 : ((keys.left || keys.a) ? -1 : (keys.right || keys.d) ? 1 : 0);
+
+      if (this._wallJumpIgnore > 0) this._wallJumpIgnore--;
+
+      const jumpKey = keys.up || keys.w || keys.space;
+      if (jumpKey && !keys._jumpHeld) {
+        if (this.wallSide !== 0) {
+          // Kick off the wall — horizontal boost away + upward hop.
+          this.vy = CFG.JUMP_FORCE * 0.92;
+          this.vx = -this.wallSide * CFG.WALL_KICK_SPEED;
+          this.facing = -this.wallSide;
+          this._wallJumpIgnore = CFG.WALL_JUMP_IGNORE_FRAMES;
+          this.wallSide = 0;
+          this.wallGrabTimer = 0;
+          this.onGround = false;
+          this.canDoubleJump = true;
+          keys._jumpHeld = true;
+        } else if (this.onGround) {
+          this.vy = CFG.JUMP_FORCE;
+          this.onGround = false;
+          this.canDoubleJump = true;
+          keys._jumpHeld = true;
+        } else if (this.canDoubleJump) {
+          this.vy = CFG.JUMP_FORCE * 0.85;
+          this.canDoubleJump = false;
+          keys._jumpHeld = true;
+        }
+      }
+      if (!jumpKey) keys._jumpHeld = false;
+
       if (moveX !== 0) {
         this.vx = moveX * CFG.MOVE_SPEED;
         this.facing = moveX > 0 ? 1 : -1;
         this.isMoving = true;
-      } else {
+      } else if (this.wallSide === 0) {
         this.vx *= rubbing ? 0.3 : 0.75;
         if (Math.abs(this.vx) < 0.2) this.vx = 0;
         this.isMoving = false;
+      } else {
+        this.vx = 0;
+        this.isMoving = false;
       }
-
-      const jumpKey = keys.up || keys.w || keys.space;
-      if (jumpKey && !keys._jumpHeld) {
-        if (this.onGround) {
-          this.vy = CFG.JUMP_FORCE;
-          this.onGround = false;
-          this.canDoubleJump = true;
-        } else if (this.canDoubleJump) {
-          this.vy = CFG.JUMP_FORCE * 0.85;
-          this.canDoubleJump = false;
-        }
-        keys._jumpHeld = true;
-      }
-      if (!jumpKey) keys._jumpHeld = false;
 
       this.vy += CFG.GRAVITY;
       if (this.vy > CFG.MAX_FALL_SPEED) this.vy = CFG.MAX_FALL_SPEED;
@@ -920,10 +954,12 @@ const InteractiveWorld = (() => {
         let g = 0;
         while (isRockAt(caves, heights, this.x + this.w, midY) && g++ < 48) this.x -= 1;
         this.vx = 0;
+        if (!this.onGround && this._wallJumpIgnore === 0) this.wallSide = 1;
       } else if (this.vx < 0 && isRockAt(caves, heights, this.x, midY)) {
         let g = 0;
         while (isRockAt(caves, heights, this.x, midY) && g++ < 48) this.x += 1;
         this.vx = 0;
+        if (!this.onGround && this._wallJumpIgnore === 0) this.wallSide = -1;
       }
 
       // --- vertical move + surface/cave floor & ceiling resolution ---
@@ -939,6 +975,8 @@ const InteractiveWorld = (() => {
           this.vy = 0;
           this.onGround = true;
           this.canDoubleJump = true;
+          this.wallSide = 0;
+          this.wallGrabTimer = 0;
           if (!this.wasOnGround) this.landDust = 8;
         }
       } else if (isRockAt(caves, heights, cxp, this.y)) {
@@ -956,8 +994,37 @@ const InteractiveWorld = (() => {
           this.vy = 0;
           this.onGround = true;
           this.canDoubleJump = true;
+          this.wallSide = 0;
+          this.wallGrabTimer = 0;
           if (!this.wasOnGround) this.landDust = 6;
         }
+      }
+
+      // Wall grab & slide — stick to cave walls in air, then jump to kick off.
+      if (!this.onGround && this._wallJumpIgnore === 0) {
+        const touchL = touchesWall(caves, heights, this.x, this.y, this.w, this.h, -1);
+        const touchR = touchesWall(caves, heights, this.x, this.y, this.w, this.h, 1);
+        if (touchL && !touchR) this.wallSide = -1;
+        else if (touchR && !touchL) this.wallSide = 1;
+        else if (touchL && touchR) this.wallSide = moveX !== 0 ? moveX : this.facing;
+        else if (!touchL && !touchR) this.wallSide = 0;
+      }
+
+      if (this.wallSide !== 0 && !this.onGround) {
+        this.wallGrabTimer++;
+        const holdToward = (this.wallSide < 0 && (keys.left || keys.a)) ||
+                           (this.wallSide > 0 && (keys.right || keys.d));
+        if (holdToward || this.wallGrabTimer <= CFG.WALL_GRAB_FRAMES) {
+          this.vy = Math.min(this.vy, CFG.WALL_SLIDE_SPEED);
+          this.vx = 0;
+          this.facing = this.wallSide;
+        } else {
+          this.wallSide = 0;
+          this.wallGrabTimer = 0;
+        }
+      } else if (this.onGround) {
+        this.wallSide = 0;
+        this.wallGrabTimer = 0;
       }
 
       if (this.x < 0) { this.x = 0; this.vx = 0; }
@@ -1001,6 +1068,11 @@ const InteractiveWorld = (() => {
       ctx.save();
       const bodyColor = playerColor || '#4ecdc4';
       const darkBodyColor = playerColor ? this.shadeColor(playerColor, -0.4) : '#2d1b4e';
+
+      // Lean into the wall while grabbing.
+      if (this.wallSide !== 0 && !this.onGround) {
+        ctx.translate(this.wallSide * 2, 0);
+      }
 
       if (this.landDust > 0) {
         ctx.fillStyle = `rgba(200, 180, 150, ${this.landDust / 12})`;
@@ -2711,7 +2783,7 @@ const InteractiveWorld = (() => {
   }
 
   return {
-    WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt,
+    WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt, touchesWall,
     materialAt, MATERIALS, digCellKey, DIG_CELL, inHeavenZone, computeSweatRate,
     generateShovels, generateCaveShovels, generateSticks, generateCaveSticks,
     generateAscentPlatforms, generateCloudPlatforms
