@@ -1238,14 +1238,14 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = InteractiveWorld;
 }
 
-if (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) {
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && document.currentScript && document.currentScript.src) {
   try {
-    var __iw_req = new XMLHttpRequest();
-    __iw_req.open('GET', document.currentScript.src, false);
-    __iw_req.overrideMimeType('text/plain');
-    __iw_req.send();
-    if (__iw_req.status === 0 || __iw_req.status === 200) {
-      InteractiveWorld.__source__ = __iw_req.responseText;
+    var _iw_xhr = new window.XMLHttpRequest();
+    _iw_xhr.open('GET', document.currentScript.src, false);
+    _iw_xhr.overrideMimeType('text/plain');
+    _iw_xhr.send();
+    if (_iw_xhr.status === 0 || _iw_xhr.status === 200) {
+      InteractiveWorld.__source__ = _iw_xhr.responseText;
     }
-  } catch (__iw_e) {}
+  } catch (_iw_e) {}
 }
