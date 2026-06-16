@@ -133,7 +133,7 @@
 
   <script src="config.js"></script>
   <script>
-    const TWO_PLAYER_KEY = 'cavesweat-two-player';
+    const PLAYER_COUNT_KEY = 'cavesweat-player-count';
     const overlay = document.getElementById('overlay');
     const errEl = document.getElementById('err');
     const descEl = document.getElementById('desc');
@@ -147,25 +147,30 @@
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     let engine = null;
     let pendingRuntime = null;
-    let twoPlayerMode = localStorage.getItem(TWO_PLAYER_KEY) === '1';
+    let playerCount = Math.min(4, Math.max(1, parseInt(localStorage.getItem(PLAYER_COUNT_KEY) || '1', 10) || 1));
 
     function updateHudText() {
-      if (twoPlayerMode) {
-        hudEl.innerHTML = 'P1: WASD + Space (jump) &nbsp;|&nbsp; P2: Arrows (↑ jump) &nbsp;|&nbsp; F / . : Dig &nbsp;|&nbsp; R / , : Rub sticks &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; Esc: Settings';
-      } else {
-        hudEl.innerHTML = 'WASD / Arrows: Move &nbsp;|&nbsp; Space / W / ↑: Jump &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; R: Rub sticks &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; Esc: Settings';
-      }
+      const hints = {
+        1: 'WASD / Arrows: Move &nbsp;|&nbsp; Space / W / ↑: Jump &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; R: Rub &nbsp;|&nbsp; Esc: Settings',
+        2: 'P1: WASD+Space &nbsp;|&nbsp; P2: Arrows+RCtrl (.) dig (,) rub &nbsp;|&nbsp; Esc: Settings',
+        3: 'P1: WASD+Space &nbsp;|&nbsp; P2: Arrows+RCtrl &nbsp;|&nbsp; P3: IJKL+= (] dig) &nbsp;|&nbsp; Esc: Settings',
+        4: 'P1: WASD+Space &nbsp;|&nbsp; P2: Arrows+RCtrl &nbsp;|&nbsp; P3: IJKL+= &nbsp;|&nbsp; P4: Num8426+0 (Num1 dig) &nbsp;|&nbsp; Esc: Settings'
+      };
+      hudEl.innerHTML = hints[playerCount] || hints[1];
     }
 
     function updatePlayersButton() {
-      playersToggleBtn.textContent = twoPlayerMode
-        ? '👤 Switch to 1 player'
-        : '👥 Add 2nd player';
+      if (playerCount >= 4) {
+        playersToggleBtn.textContent = '👤 Solo (1 player)';
+      } else {
+        const ord = ['2nd', '3rd', '4th'][playerCount - 1];
+        playersToggleBtn.textContent = `👥 Add ${ord} player`;
+      }
     }
 
-    function setTwoPlayerMode(on) {
-      twoPlayerMode = !!on;
-      localStorage.setItem(TWO_PLAYER_KEY, twoPlayerMode ? '1' : '0');
+    function setPlayerCount(n) {
+      playerCount = Math.min(4, Math.max(1, n | 0));
+      localStorage.setItem(PLAYER_COUNT_KEY, String(playerCount));
       updatePlayersButton();
       updateHudText();
     }
@@ -216,8 +221,8 @@
       restartGame();
     }
 
-    function togglePlayers() {
-      setTwoPlayerMode(!twoPlayerMode);
+    function cyclePlayers() {
+      setPlayerCount(playerCount >= 4 ? 1 : playerCount + 1);
       restartGame();
     }
 
@@ -247,7 +252,7 @@
         const canvas = document.getElementById('game');
         engine = new window.InteractiveWorld.WorldEngine(canvas, {
           interactive: true,
-          twoPlayer: twoPlayerMode,
+          playerCount,
           onEscape: handleEscape
         });
         if (engine.applyWorldConfig) engine.applyWorldConfig(runtime.apply);
@@ -286,7 +291,7 @@
     });
 
     settingsBtn.addEventListener('click', openSettings);
-    playersToggleBtn.addEventListener('click', togglePlayers);
+    playersToggleBtn.addEventListener('click', cyclePlayers);
     closeSettingsBtn.addEventListener('click', closeSettings);
     resetBtn.addEventListener('click', resetGame);
     settingsPanel.addEventListener('click', (e) => {

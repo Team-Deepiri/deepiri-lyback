@@ -1091,7 +1091,7 @@ const InteractiveWorld = (() => {
 
       if (this._wallJumpIgnore > 0) this._wallJumpIgnore--;
 
-      const jumpKey = keys.up || keys.w || keys.space;
+      const jumpKey = keys.jump != null ? keys.jump : (keys.up || keys.w || keys.space);
       if (keys.jumpPressed) {
         if (!this.tryJump(keys)) this._jumpBuffer = CFG.JUMP_BUFFER_FRAMES;
       } else if (jumpKey && !this._jumpHeld) {
@@ -1318,10 +1318,28 @@ const InteractiveWorld = (() => {
       this.mode = options.mode || 'world';
       this.interactive = options.interactive !== false;
       this.twoPlayer = options.twoPlayer === true;
+      const rawCount = options.playerCount != null
+        ? options.playerCount
+        : (this.twoPlayer ? 2 : 1);
+      this.playerCount = Math.min(4, Math.max(1, rawCount | 0));
       this.onEscape = options.onEscape || null;
-      this.keys = { jumpPressed: false, jumpPressedP1: false, jumpPressedP2: false };
+      this.keys = {
+        jumpPressed: false,
+        jumpPressed0: false,
+        jumpPressed1: false,
+        jumpPressed2: false,
+        jumpPressed3: false
+      };
       this.players = [];
-      this._playerColors = ['#4ecdc4', '#ff9f43'];
+      this._playerColors = ['#4ecdc4', '#ff9f43', '#a78bfa', '#f472b6'];
+      this._playerDigKeys = ['f', 'p2dig', 'p3dig', 'p4dig'];
+      this._playerRubHints = ['R', ',', '[', 'Num3'];
+      this._playerDigLabels = [
+        '🪏 F: dig · S+F: down',
+        '🪏 .: dig · ↓+.: down',
+        '🪏 ]: dig · K+]: down',
+        '🪏 Num1: dig · Num2+Num1: down'
+      ];
       this.cameraX = 0;
       this.cameraY = 0;
       this.interactables = [];
@@ -1440,9 +1458,9 @@ const InteractiveWorld = (() => {
       this.buckets = layout.buckets;
 
       const startY = getTerrainY(this.terrain, 100);
-      this.players = [new Player(100, startY - CFG.PLAYER_H - 5)];
-      if (this.twoPlayer) {
-        this.players.push(new Player(135, startY - CFG.PLAYER_H - 5));
+      this.players = [];
+      for (let i = 0; i < this.playerCount; i++) {
+        this.players.push(new Player(100 + i * 35, startY - CFG.PLAYER_H - 5));
       }
       this.player = this.players[0];
 
@@ -1500,22 +1518,109 @@ const InteractiveWorld = (() => {
     }
 
     playerKeys(index) {
-      if (!this.twoPlayer) return this.keys;
-      if (index === 0) {
-        return {
-          left: this.keys.a, right: this.keys.d,
-          a: this.keys.a, d: this.keys.d, w: this.keys.w, s: this.keys.s,
-          space: this.keys.space,
-          jumpPressed: this.keys.jumpPressedP1,
-          r: this.keys.r
-        };
+      if (this.playerCount <= 1) return this.keys;
+      const k = this.keys;
+      switch (index) {
+        case 0:
+          return {
+            left: k.a, right: k.d, down: k.s,
+            a: k.a, d: k.d, s: k.s,
+            jump: k.space,
+            jumpPressed: k.jumpPressed0,
+            r: k.r
+          };
+        case 1:
+          return {
+            left: k.left, right: k.right, down: k.down,
+            jump: k.ctrlRight,
+            jumpPressed: k.jumpPressed1,
+            r: k.p2rub
+          };
+        case 2:
+          return {
+            left: k.j, right: k.l, down: k.k,
+            jump: k.equal,
+            jumpPressed: k.jumpPressed2,
+            r: k.p3rub
+          };
+        case 3:
+          return {
+            left: k.np4, right: k.np6, down: k.np2,
+            jump: k.np0,
+            jumpPressed: k.jumpPressed3,
+            r: k.p4rub
+          };
+        default:
+          return k;
       }
-      return {
-        left: this.keys.left, right: this.keys.right,
-        up: this.keys.up, down: this.keys.down,
-        jumpPressed: this.keys.jumpPressedP2,
-        r: this.keys.p2rub
-      };
+    }
+
+    _setMultiKey(name, down) {
+      this.keys[name] = down;
+    }
+
+    _handleMultiplayerKey(e, down) {
+      const key = e.key.toLowerCase();
+      const code = e.code;
+
+      if (down) {
+        if (key === 'e') { this.interactWithPortal(); return; }
+        if (key === 'm') { this.showMinimap = !this.showMinimap; return; }
+      }
+
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
+
+      // P1 — WASD + Space
+      if (key === 'a' || key === 'd' || key === 's' || key === 'w') {
+        this._setMultiKey(key, down);
+        return;
+      }
+      if (key === ' ' || code === 'Space') {
+        this._setMultiKey('space', down);
+        if (down) this.keys.jumpPressed0 = true;
+        return;
+      }
+      if (key === 'f') { if (down) e.preventDefault(); this._setMultiKey('f', down); return; }
+      if (key === 'r') { if (down) e.preventDefault(); this._setMultiKey('r', down); return; }
+
+      // P2 — Arrows + Right Ctrl
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+        this._setMultiKey(key.replace('arrow', ''), down);
+        return;
+      }
+      if (code === 'ControlRight') {
+        this._setMultiKey('ctrlRight', down);
+        if (down) this.keys.jumpPressed1 = true;
+        return;
+      }
+      if (key === '.') { if (down) e.preventDefault(); this._setMultiKey('p2dig', down); return; }
+      if (key === ',') { if (down) e.preventDefault(); this._setMultiKey('p2rub', down); return; }
+
+      // P3 — IJKL + =
+      if (key === 'i' || key === 'j' || key === 'k' || key === 'l') {
+        this._setMultiKey(key, down);
+        return;
+      }
+      if (key === '=' || key === '+') {
+        this._setMultiKey('equal', down);
+        if (down) this.keys.jumpPressed2 = true;
+        return;
+      }
+      if (key === ']') { if (down) e.preventDefault(); this._setMultiKey('p3dig', down); return; }
+      if (key === '[') { if (down) e.preventDefault(); this._setMultiKey('p3rub', down); return; }
+
+      // P4 — Numpad 8426 + 0
+      if (code === 'Numpad8') { this._setMultiKey('np8', down); return; }
+      if (code === 'Numpad4') { this._setMultiKey('np4', down); return; }
+      if (code === 'Numpad2') { this._setMultiKey('np2', down); return; }
+      if (code === 'Numpad6') { this._setMultiKey('np6', down); return; }
+      if (code === 'Numpad0') {
+        this._setMultiKey('np0', down);
+        if (down) this.keys.jumpPressed3 = true;
+        return;
+      }
+      if (code === 'Numpad1') { if (down) e.preventDefault(); this._setMultiKey('p4dig', down); return; }
+      if (code === 'Numpad3') { if (down) e.preventDefault(); this._setMultiKey('p4rub', down); return; }
     }
 
     nearestPlayer(x, y) {
@@ -1545,22 +1650,8 @@ const InteractiveWorld = (() => {
           return;
         }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
-        if (this.twoPlayer) {
-          if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
-            this.keys[key.replace('arrow', '')] = true;
-            if (key === 'arrowup') this.keys.jumpPressedP2 = true;
-            return;
-          }
-          if (key === '.') { e.preventDefault(); this.keys.p2dig = true; return; }
-          if (key === ',') { e.preventDefault(); this.keys.p2rub = true; return; }
-          if (key === 'f') { e.preventDefault(); this.keys.f = true; return; }
-          if (key === 'r') { e.preventDefault(); this.keys.r = true; return; }
-          if (key === 'e') { this.interactWithPortal(); return; }
-          if (key === 'm') { this.showMinimap = !this.showMinimap; return; }
-          if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd') {
-            this.keys[key === ' ' ? 'space' : key] = true;
-            if (key === ' ' || key === 'w') this.keys.jumpPressedP1 = true;
-          }
+        if (this.playerCount > 1) {
+          this._handleMultiplayerKey(e, true);
           return;
         }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
@@ -1580,13 +1671,10 @@ const InteractiveWorld = (() => {
       });
       document.addEventListener('keyup', (e) => {
         const key = e.key.toLowerCase();
-        if (this.twoPlayer) {
-          if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
-            this.keys[key.replace('arrow', '')] = false;
-            return;
-          }
-          if (key === '.') { this.keys.p2dig = false; return; }
-          if (key === ',') { this.keys.p2rub = false; return; }
+        const code = e.code;
+        if (this.playerCount > 1) {
+          this._handleMultiplayerKey(e, false);
+          return;
         }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = false;
         else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'f' || key === 'r') this.keys[key === ' ' ? 'space' : key] = false;
@@ -1852,7 +1940,7 @@ const InteractiveWorld = (() => {
         const pl = this.players[i];
         const pk = this.playerKeys(i);
         pl.update(pk, this.terrain, this.platforms, this.portals, this.chests, this.caves, this.time);
-        const digging = this.twoPlayer ? (i === 0 ? this.keys.f : this.keys.p2dig) : this.keys.f;
+        const digging = this.keys[this._playerDigKeys[i]];
         if (digging) this.digAt(pl, pk);
         this.updateRubbing(pl, pk);
       }
@@ -1891,9 +1979,8 @@ const InteractiveWorld = (() => {
         }
       }
 
-      if (this.twoPlayer) {
-        this.keys.jumpPressedP1 = false;
-        this.keys.jumpPressedP2 = false;
+      if (this.playerCount > 1) {
+        for (let i = 0; i < this.playerCount; i++) this.keys['jumpPressed' + i] = false;
       } else {
         this.keys.jumpPressed = false;
       }
@@ -2073,7 +2160,7 @@ const InteractiveWorld = (() => {
           ctx.fillStyle = 'rgba(255,255,255,0.85)';
           ctx.font = '11px system-ui, sans-serif';
           ctx.textBaseline = 'middle';
-          const rubHint = this.twoPlayer ? (i === 0 ? 'R' : ',') : 'R';
+          const rubHint = this.playerCount > 1 ? (this._playerRubHints[i] || 'R') : 'R';
           ctx.fillText('❄️ ' + Math.ceil(p.freeze), x + 6, y + bh / 2 + 1);
           if (p.sticks >= 2) {
             ctx.fillStyle = color;
@@ -2087,7 +2174,7 @@ const InteractiveWorld = (() => {
           ctx.fillStyle = 'rgba(255,255,255,0.85)';
           ctx.font = '11px system-ui, sans-serif';
           ctx.textBaseline = 'middle';
-          const label = this.twoPlayer ? (i === 0 ? 'P1 ' : 'P2 ') : '';
+          const label = this.playerCount > 1 ? ('P' + (i + 1) + ' ') : '';
           ctx.fillText(label + '💧 ' + Math.ceil(p.water), x + 6, y + bh / 2 + 1);
           if (i === 0 && this.heat > 0.55) {
             ctx.fillStyle = '#ff8b3a';
@@ -2098,11 +2185,11 @@ const InteractiveWorld = (() => {
             ctx.fillText('🪵×' + p.sticks, x + bw + 12, y + bh / 2 + 1);
           }
         }
-        if (this.twoPlayer) {
+        if (this.playerCount > 1) {
           ctx.fillStyle = color;
           ctx.font = '9px system-ui, sans-serif';
           ctx.textAlign = 'right';
-          ctx.fillText(i === 0 ? 'P1' : 'P2', x + bw - 4, y - 5);
+          ctx.fillText('P' + (i + 1), x + bw - 4, y - 5);
           ctx.textAlign = 'left';
         }
         y += bh + 10;
@@ -2112,15 +2199,15 @@ const InteractiveWorld = (() => {
     }
 
     drawShovelHud(ctx, W, H, p, playerIndex) {
-      const bottomPad = 52 + (this.players.length - 1 - playerIndex) * 48;
-      const digLabel = this.twoPlayer
-        ? (playerIndex === 0 ? '🪏 F: dig · S+F: down' : '🪏 .: dig · ↓+.: down')
-        : '🪏 F: dig · S+F: down';
+      const row = Math.floor(playerIndex / 2);
+      const rightSide = playerIndex % 2 === 1;
+      const bottomPad = 52 + row * 44;
+      const digLabel = this._playerDigLabels[playerIndex] || '🪏 F: dig · S+F: down';
       ctx.save();
       ctx.font = '12px system-ui, sans-serif';
       ctx.textBaseline = 'middle';
       const tw = ctx.measureText(digLabel).width + 18;
-      const bx = playerIndex === 1 && this.twoPlayer ? W - tw - 12 : 12;
+      const bx = rightSide ? W - tw - 12 : 12;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(bx, H - bottomPad, tw, 22);
       ctx.fillStyle = '#ffd479';
@@ -2930,9 +3017,13 @@ const InteractiveWorld = (() => {
 
       let hudY = this._hudStackY || 14;
       const weatherIcon = this.weatherState === 'rain' ? '🌧' : this.weatherState === 'snow' ? '❄' : '☀';
-      const moveHint = this.twoPlayer
-        ? 'P1: WASD+Space P2: Arrows'
-        : 'WASD:Move Space:Jump';
+      const moveHints = {
+        1: 'WASD:Move Space:Jump',
+        2: 'P1: WASD+Space · P2: Arrows+RCtrl',
+        3: 'P1: WASD+Space · P2: Arrows+RCtrl · P3: IJKL+=',
+        4: 'P1: WASD+Space · P2: Arrows+RCtrl · P3: IJKL+= · P4: Num8426+0'
+      };
+      const moveHint = moveHints[this.playerCount] || moveHints[1];
       ctx.fillText(`${weatherIcon} ${moveHint} E:Interact M:Map`, 14, hudY);
       hudY += 18;
 
@@ -2974,8 +3065,8 @@ const InteractiveWorld = (() => {
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.font = '10px monospace';
       ctx.textAlign = 'right';
-      const posLabel = this.twoPlayer
-        ? `x:${Math.floor(this.players[0].x)}/${Math.floor(this.players[1].x)}`
+      const posLabel = this.playerCount > 1
+        ? 'x:' + this.players.map(pl => Math.floor(pl.x)).join('/')
         : `x:${Math.floor(this.players[0].x)}`;
       ctx.fillText(`${biomeName} | ${posLabel}`, W - 14, 14);
 
