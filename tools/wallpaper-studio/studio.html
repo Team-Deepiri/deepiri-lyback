@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Deepiri Studio — Interactive Wallpaper Designer</title>
+  <title>Deepiri Lyback — Interactive Wallpaper Designer</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -451,6 +451,84 @@
 
     .canvas-container:hover .canvas-overlay { opacity: 1; }
 
+    .terminal-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.7) 100%);
+      z-index: 50;
+      animation: term-in 0.25s ease;
+    }
+    .terminal-overlay[hidden] { display: none; }
+
+    @keyframes term-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+
+    .terminal-screen {
+      width: min(680px, 86%);
+      height: min(420px, 78%);
+      display: flex;
+      flex-direction: column;
+      background: #06120f;
+      border: 2px solid var(--primary);
+      border-radius: 10px;
+      box-shadow: 0 0 0 6px rgba(0,0,0,0.5), 0 0 40px rgba(78,205,196,0.4), inset 0 0 60px rgba(78,205,196,0.06);
+      overflow: hidden;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+    }
+
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 12px;
+      background: rgba(78,205,196,0.08);
+      border-bottom: 1px solid rgba(78,205,196,0.2);
+      font-size: 0.72rem;
+    }
+    .terminal-title { color: var(--primary); font-weight: 600; }
+    .terminal-hint { color: var(--text-dim); margin-left: auto; }
+    .terminal-close {
+      background: transparent; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 0.85rem; padding: 2px 4px;
+    }
+    .terminal-close:hover { color: var(--primary); }
+
+    .terminal-output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+      color: #b8f5ee;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .terminal-output .term-cmd { color: var(--primary); }
+    .terminal-output .term-err { color: #ff8b8b; }
+    .terminal-output .term-sys { color: var(--text-dim); font-style: italic; }
+
+    .terminal-inputline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-top: 1px solid rgba(78,205,196,0.2);
+      background: rgba(0,0,0,0.3);
+    }
+    .terminal-prompt { color: var(--primary); font-size: 0.8rem; font-weight: 600; flex-shrink: 0; }
+    .terminal-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #d8fff8;
+      font-family: inherit;
+      font-size: 0.8rem;
+    }
+    .terminal-input::placeholder { color: rgba(184,245,238,0.3); }
+
     .info-bar {
       display: flex;
       justify-content: space-between;
@@ -547,7 +625,7 @@
     <header>
       <div class="logo"><img src="../../assets/branding/logo.png" alt="Deepiri" style="width:100%;height:100%;border-radius:8px;"></div>
       <div class="brand">
-        <h1><span>Deepiri</span> Studio</h1>
+        <h1><span>Deepiri</span> Lyback</h1>
         <span class="version-badge">v1.1.0</span>
       </div>
       <div class="header-actions">
@@ -786,7 +864,7 @@
               <span class="arrow open">▸</span>
             </div>
             <div class="panel-body open">
-              <input type="file" id="load-bg" class="file-input" accept="image/*">
+              <input type="file" id="load-bg" class="file-input" accept="image/*,.lyv">
               <label for="load-bg" class="upload-area">
                 <span class="upload-icon">📁</span>
                 Load an existing background
@@ -800,7 +878,22 @@
       <main class="canvas-area">
         <div class="canvas-container" id="canvas-wrapper">
           <canvas id="preview-canvas"></canvas>
-          <div class="canvas-overlay">Click to interact &middot; WASD &middot; Space to jump</div>
+          <div class="canvas-overlay">Click to interact &middot; WASD &middot; Space to jump &middot; E to use portals</div>
+
+          <div class="terminal-overlay" id="terminal-overlay" hidden>
+            <div class="terminal-screen">
+              <div class="terminal-bar">
+                <span class="terminal-title">▮ deepiri terminal</span>
+                <span class="terminal-hint">Esc / ✕ to leave</span>
+                <button class="terminal-close" id="terminal-close" title="Close">✕</button>
+              </div>
+              <div class="terminal-output" id="terminal-output"></div>
+              <div class="terminal-inputline">
+                <span class="terminal-prompt" id="terminal-prompt">$</span>
+                <input type="text" class="terminal-input" id="terminal-input" autocomplete="off" spellcheck="false" placeholder="type a command and press Enter…">
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="info-bar">
@@ -817,6 +910,7 @@
             <button class="export-btn" data-format="theme"><span class="ext">THEME</span>Theme</button>
             <button class="export-btn" data-format="zip"><span class="ext">ZIP</span>Bundle</button>
             <button class="export-btn" data-format="html" style="border-color:rgba(78,205,196,0.4);background:rgba(78,205,196,0.08)"><span class="ext">HTML</span>Standalone</button>
+            <button class="export-btn" data-format="lyv" style="border-color:var(--primary);background:rgba(108,92,231,0.12);color:var(--primary)"><span class="ext">LYV</span>Lyvector</button>
           </div>
         </div>
       </main>
@@ -829,6 +923,7 @@
   <script src="../../src/interactive-background/player.js"></script>
   <script src="export-wallpaper.js"></script>
   <script src="../../src/interactive-background/wallpaper-bundler.js"></script>
+  <script src="../../src/interactive-background/lyvector.js"></script>
   <script>
     const canvas = document.getElementById('preview-canvas');
     const wrapper = document.getElementById('canvas-wrapper');
@@ -960,12 +1055,13 @@
           }
           loop(timestamp) {
             if (!this.isRunning) return;
-            this.deltaTime = timestamp - this.lastTime;
+            const interval = 1000 / CONFIG.TARGET_FPS;
+            this.deltaTime += timestamp - this.lastTime;
             this.lastTime = timestamp;
-            if (this.deltaTime >= 1000 / CONFIG.TARGET_FPS) { this.update(); this.draw(); this.deltaTime = 0; }
+            if (this.deltaTime >= interval) { this.update(); this.draw(); this.deltaTime = Math.min(this.deltaTime % interval, interval); }
             requestAnimationFrame((t) => this.loop(t));
           }
-          start() { this.isRunning = true; this.lastTime = performance.now(); this.loop(this.lastTime); }
+          start() { this.isRunning = true; this.lastTime = performance.now(); this.deltaTime = 0; this.update(); this.draw(); this.loop(this.lastTime); }
           stop() { this.isRunning = false; }
         }
         return { Engine, Particle, CONFIG };
@@ -1135,6 +1231,7 @@
         document.getElementById('status-text').textContent = 'World mode — WASD to move · Space to jump · Click/E to interact';
         document.getElementById('status-dot').className = 'dot';
         applyWorldDefaults(engine);
+        applyNativeIntegration(engine);
       } else {
         engine = new InteractiveEngine.Engine(canvas, { interactive: true });
         document.getElementById('status-text').textContent = 'Particle mode — Click to interact';
@@ -1257,6 +1354,13 @@
             blob = new Blob([htmlContent], { type: 'text/html' });
             filename = 'deepiri-world-wallpaper.html';
             break;
+          case 'lyv':
+            // Lyvector: a valid PNG poster (shows as an image anywhere) with the
+            // live world packed into a private chunk. Opens in the Deepiri viewer
+            // or via Load; previews as a picture everywhere else.
+            blob = Lyvector.encode(config, tempCanvas);
+            filename = 'deepiri-world.lyv';
+            break;
         }
 
         const url = URL.createObjectURL(blob);
@@ -1271,7 +1375,7 @@
     });
 
     document.getElementById('export-all').addEventListener('click', async () => {
-      const formats = ['png', 'svg', 'webp', 'bmp', 'jpg', 'wallpaper', 'theme', 'zip', 'html'];
+      const formats = ['png', 'svg', 'webp', 'bmp', 'jpg', 'wallpaper', 'theme', 'zip', 'html', 'lyv'];
       for (const format of formats) {
         document.querySelector(`[data-format="${format}"]`).click();
         await new Promise(r => setTimeout(r, 500));
@@ -1281,6 +1385,17 @@
     document.getElementById('load-bg').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
+
+      // Lyvector first: a .lyv (or any image carrying a Lyvector chunk) revives
+      // straight into the live world.
+      try {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        const lyv = (typeof Lyvector !== 'undefined') ? Lyvector.decode(buf) : null;
+        if (lyv && lyv.scene) {
+          loadSceneIntoStudio(lyv.scene);
+          return;
+        }
+      } catch (err) { /* fall through to image/player loader */ }
 
       const player = new InteractivePlayer.Player(canvas);
       const data = await player.loadFromFile(file);
@@ -1336,6 +1451,117 @@
         startEngine();
       });
     });
+
+    // ---- Native (Electron) integration: real Desktop files + terminal ----
+    const native = (typeof window !== 'undefined') ? window.deepiriNative : null;
+    let desktopFiles = null;       // cached file list
+    let terminalStarted = false;
+
+    const termOverlay = document.getElementById('terminal-overlay');
+    const termOutput = document.getElementById('terminal-output');
+    const termInput = document.getElementById('terminal-input');
+    const termClose = document.getElementById('terminal-close');
+
+    function termPrint(text, cls) {
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = text;
+      termOutput.appendChild(span);
+      termOutput.scrollTop = termOutput.scrollHeight;
+    }
+
+    function openTerminal() {
+      if (!native) {
+        termOutput.textContent = '';
+        termPrint('The live terminal only works in the Deepiri Lyback desktop app (run `npm start`).\nIn a browser the world is sandboxed and cannot reach a shell.\n', 'term-sys');
+        termOverlay.hidden = false;
+        return;
+      }
+      termOverlay.hidden = false;
+      termInput.focus();
+      if (!terminalStarted) {
+        terminalStarted = true;
+        native.terminal.onData((chunk) => termPrint(chunk));
+        native.terminal.onExit(() => termPrint('\n[shell exited]\n', 'term-sys'));
+        native.terminal.start().then((info) => {
+          termPrint('Connected to ' + (info && info.shell ? info.shell : 'shell') + '\n', 'term-sys');
+        });
+      }
+    }
+
+    function closeTerminal() {
+      termOverlay.hidden = true;
+      if (engine && engine.exitComputer) engine.exitComputer();
+    }
+
+    if (termInput) {
+      termInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const cmd = termInput.value;
+          termPrint('$ ' + cmd + '\n', 'term-cmd');
+          if (native) native.terminal.input(cmd + '\n');
+          termInput.value = '';
+        } else if (e.key === 'Escape') {
+          closeTerminal();
+        }
+        e.stopPropagation();
+      });
+    }
+    if (termClose) termClose.addEventListener('click', closeTerminal);
+
+    // Revive a decoded Lyvector scene into the studio: restore controls, then run.
+    function loadSceneIntoStudio(scene) {
+      const setVal = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = v; };
+      currentMode = scene.mode || 'world';
+      toggleControls(currentMode);
+      if (currentMode === 'world') {
+        setVal('world-width', scene.worldWidth);
+        setVal('platform-count', scene.platformCount);
+        setVal('portal-count', scene.portalCount);
+        setVal('world-particles', scene.particleCount);
+        setVal('creature-count', scene.creatureCount);
+        setVal('chest-count', scene.chestCount);
+        setVal('crystal-count', scene.crystalCount);
+        setVal('world-biome', scene.biome);
+        setVal('world-weather', scene.weather);
+        setVal('world-time', scene.timeOfDay);
+        setVal('world-sky-top', scene.skyTop);
+        setVal('world-sky-bottom', scene.skyBottom);
+        setVal('world-ground-top', scene.groundTop);
+        setVal('world-ground-bottom', scene.groundBottom);
+        setVal('world-player-color', scene.playerColor);
+      } else {
+        setVal('particle-count', scene.particleCount);
+        setVal('particle-size', scene.particleSize);
+        setVal('speed', scene.speed);
+        setVal('bg-color', scene.bgColor);
+      }
+      startEngine();
+      if (currentMode === 'world' && engine && engine.applyWorldConfig) {
+        engine.applyWorldConfig({
+          biome: scene.biome, weather: scene.weather, timeOfDay: scene.timeOfDay,
+          skyTop: scene.skyTop, skyBottom: scene.skyBottom,
+          groundTop: scene.groundTop, groundBottom: scene.groundBottom,
+          playerColor: scene.playerColor
+        });
+      }
+      document.getElementById('status-text').textContent = 'Loaded Lyvector world — WASD to move · E for portals';
+    }
+
+    function applyNativeIntegration(eng) {
+      if (!eng || !eng.setNativeHandlers) return;
+      eng.setNativeHandlers({
+        onFileOpen: (filePath) => { if (native) native.openPath(filePath); },
+        onTerminalEnter: openTerminal,
+        onTerminalExit: () => { termOverlay.hidden = true; }
+      });
+      if (!native) return;
+      const applyFiles = (files) => {
+        if (files && !files.error && eng.setNativeFiles) eng.setNativeFiles(files);
+      };
+      if (desktopFiles) applyFiles(desktopFiles);
+      else native.listDesktop().then((files) => { desktopFiles = files; applyFiles(files); });
+    }
 
     toggleControls('world');
     initCanvas();

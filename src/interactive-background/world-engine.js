@@ -133,10 +133,10 @@ const InteractiveWorld = (() => {
   }
 
   class Creature {
-    constructor(worldWidth, worldHeight, heights) {
+    constructor(worldWidth, worldHeight, heights, forcedType) {
       this.worldWidth = worldWidth;
       this.worldHeight = worldHeight;
-      this.type = Math.random() < 0.5 ? 'bird' : Math.random() < 0.6 ? 'firefly' : 'bunny';
+      this.type = forcedType || (Math.random() < 0.5 ? 'bird' : Math.random() < 0.6 ? 'firefly' : 'bunny');
       this.reset(heights);
     }
     reset(heights) {
@@ -150,25 +150,142 @@ const InteractiveWorld = (() => {
       this.wingPhase = Math.random() * Math.PI * 2;
       this.dirChange = Math.random() * 200 + 100;
       this.timer = 0;
-      this.heights = heights;
+      this.heights = heights || this.heights;
+      this.onGround = false;
+      this.alpha = 1;
+      if (this.type === 'bunny' && this.heights) {
+        this.y = getTerrainY(this.heights, this.x) - this.size;
+      }
     }
-    update() {
+    // ctx-free behavior update.
+    // context = { player, neighbors, daylight, lights }
+    update(context) {
+      const ctxt = context || {};
       this.timer++;
+      if (this.type === 'bird') this.updateBird(ctxt);
+      else if (this.type === 'bunny') this.updateBunny(ctxt);
+      else this.updateFirefly(ctxt);
+    }
+    updateBird(ctxt) {
+      // Boids flocking among nearby birds + flee from player.
+      const neighbors = ctxt.neighbors || [];
+      let sepX = 0, sepY = 0, aliX = 0, aliY = 0, cohX = 0, cohY = 0, n = 0;
+      for (const o of neighbors) {
+        if (o === this || o.type !== 'bird') continue;
+        const dx = this.x - o.x, dy = this.y - o.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > 22500) continue; // 150px radius
+        n++;
+        cohX += o.x; cohY += o.y;
+        aliX += o.vx; aliY += o.vy;
+        if (d2 < 1600 && d2 > 0) { // separation < 40px
+          const inv = 1 / Math.sqrt(d2);
+          sepX += dx * inv; sepY += dy * inv;
+        }
+      }
+      if (n > 0) {
+        cohX = (cohX / n - this.x) * 0.0008;
+        cohY = (cohY / n - this.y) * 0.0008;
+        aliX = (aliX / n - this.vx) * 0.02;
+        aliY = (aliY / n - this.vy) * 0.02;
+        this.vx += cohX + aliX + sepX * 0.05;
+        this.vy += cohY + aliY + sepY * 0.05;
+      }
       if (this.timer > this.dirChange) {
-        this.vx = (Math.random() - 0.5) * 1.5;
-        this.vy = (Math.random() - 0.5) * 0.5;
+        this.vx += (Math.random() - 0.5) * 1.2;
+        this.vy += (Math.random() - 0.5) * 0.4;
         this.dirChange = Math.random() * 200 + 100;
         this.timer = 0;
-        if (this.type === 'bunny') this.vy = -3;
       }
-      if (this.type === 'bird') {
-        this.wingPhase += 0.1;
-        this.vy += Math.sin(this.wingPhase) * 0.02;
+      // Flee player.
+      if (ctxt.player) {
+        const dx = this.x - ctxt.player.x, dy = this.y - ctxt.player.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 14400 && d2 > 0) {
+          const inv = 1 / Math.sqrt(d2);
+          this.vx += dx * inv * 0.6;
+          this.vy += dy * inv * 0.6;
+        }
       }
-      if (this.type === 'firefly') {
-        this.life = 0.5 + Math.sin(this.wingPhase * 2) * 0.3;
-        this.wingPhase += 0.03;
+      this.wingPhase += 0.1;
+      this.vy += Math.sin(this.wingPhase) * 0.02;
+      const sp = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+      if (sp > 3) { this.vx = this.vx / sp * 3; this.vy = this.vy / sp * 3; }
+      this.x += this.vx;
+      this.y += this.vy;
+      if (this.x < 0) { this.x = 0; this.vx = -this.vx; }
+      if (this.x > this.worldWidth) { this.x = this.worldWidth; this.vx = -this.vx; }
+      if (this.y < 20) { this.y = 20; this.vy = Math.abs(this.vy); }
+      if (this.y > 320) { this.y = 320; this.vy = -Math.abs(this.vy); }
+    }
+    updateBunny(ctxt) {
+      const groundY = this.heights ? getTerrainY(this.heights, this.x) : 400;
+      this.vy += 0.45; // gravity
+      // Hop logic.
+      if (this.onGround) {
+        if (this.timer > this.dirChange) {
+          this.vy = -6 - Math.random() * 2;
+          this.vx = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.random() * 1.5);
+          this.dirChange = 40 + Math.random() * 120;
+          this.timer = 0;
+        } else {
+          this.vx *= 0.8;
+        }
       }
+      // Flee player (hop away fast).
+      if (ctxt.player) {
+        const dx = this.x - ctxt.player.x;
+        const dist = Math.abs(dx);
+        if (dist < 110) {
+          this.vx = (dx >= 0 ? 1 : -1) * 3.2;
+          if (this.onGround) { this.vy = -7; }
+        }
+      }
+      this.x += this.vx;
+      this.y += this.vy;
+      this.onGround = false;
+      if (this.y + this.size >= groundY) {
+        this.y = groundY - this.size;
+        this.vy = 0;
+        this.onGround = true;
+      }
+      if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx); }
+      if (this.x > this.worldWidth) { this.x = this.worldWidth; this.vx = -Math.abs(this.vx); }
+    }
+    updateFirefly(ctxt) {
+      const daylight = ctxt.daylight === undefined ? 0 : ctxt.daylight;
+      // Fade out by day.
+      this.alpha = 1 - daylight;
+      this.wingPhase += 0.03;
+      // Gentle wander.
+      if (this.timer > this.dirChange) {
+        this.vx = (Math.random() - 0.5) * 0.8;
+        this.vy = (Math.random() - 0.5) * 0.6;
+        this.dirChange = Math.random() * 120 + 60;
+        this.timer = 0;
+      }
+      // Drawn toward nearby fireflies and lights at night.
+      if (this.alpha > 0.2) {
+        let tx = 0, ty = 0, n = 0;
+        const neighbors = ctxt.neighbors || [];
+        for (const o of neighbors) {
+          if (o === this || o.type !== 'firefly') continue;
+          const dx = o.x - this.x, dy = o.y - this.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < 14400) { tx += o.x; ty += o.y; n++; }
+        }
+        const lights = ctxt.lights || [];
+        for (const l of lights) {
+          const dx = l.x - this.x, dy = l.y - this.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < 40000) { tx += l.x * 2; ty += l.y * 2; n += 2; }
+        }
+        if (n > 0) {
+          this.vx += ((tx / n) - this.x) * 0.001;
+          this.vy += ((ty / n) - this.y) * 0.001;
+        }
+      }
+      this.life = 0.5 + Math.sin(this.wingPhase * 2) * 0.3;
       this.x += this.vx;
       this.y += this.vy;
       if (this.x < 0) { this.x = 0; this.vx = -this.vx; }
@@ -201,7 +318,9 @@ const InteractiveWorld = (() => {
         ctx.arc(sx, sy + 1, 1, 0, Math.PI * 2);
         ctx.fill();
       } else if (this.type === 'firefly') {
-        ctx.globalAlpha = this.life * 0.7;
+        const fa = this.alpha === undefined ? 1 : this.alpha;
+        if (fa <= 0.02) { ctx.restore(); return; }
+        ctx.globalAlpha = this.life * 0.7 * fa;
         ctx.fillStyle = this.color;
         ctx.shadowColor = this.color;
         ctx.shadowBlur = 8;
@@ -465,6 +584,15 @@ const InteractiveWorld = (() => {
       ctx.fillRect(eyeX + 1, sy + 4, 2, 2);
       ctx.fillRect(eyeX + 7, sy + 4, 2, 2);
 
+      // Typing animation: little arms tapping out of rhythm in front of the body.
+      if (this.isTyping) {
+        const tf = this.typeFrame || 0;
+        ctx.fillStyle = bodyColor;
+        const armY = sy + 16;
+        ctx.fillRect(sx + this.w - 2, armY + Math.sin(tf) * 1.5, 6, 3);
+        ctx.fillRect(sx - 4, armY + Math.sin(tf + 1.7) * 1.5, 6, 3);
+      }
+
       ctx.restore();
     }
   }
@@ -497,7 +625,81 @@ const InteractiveWorld = (() => {
       this._groundTopR = this._groundTopG = this._groundTopB = null;
       this._groundBotR = this._groundBotG = this._groundBotB = null;
       this._playerColor = null;
+      // Native integration (Electron): real Desktop files as portals + terminal.
+      this.computerMode = false;
+      this.terminalPortal = null;
+      this.computerGrow = 0;
+      this.onFileOpen = null;
+      this.onTerminalEnter = null;
+      this.onTerminalExit = null;
       this.init();
+    }
+
+    // Wire callbacks that reach the real machine. Safe to call with partial sets.
+    setNativeHandlers(handlers = {}) {
+      if (handlers.onFileOpen) this.onFileOpen = handlers.onFileOpen;
+      if (handlers.onTerminalEnter) this.onTerminalEnter = handlers.onTerminalEnter;
+      if (handlers.onTerminalExit) this.onTerminalExit = handlers.onTerminalExit;
+    }
+
+    _extColor(ext, isDir) {
+      if (isDir) return '#ffd479';
+      const map = {
+        txt: '#dfe6e9', md: '#dfe6e9', pdf: '#ff6b6b', doc: '#45b7d1', docx: '#45b7d1',
+        png: '#96ceb4', jpg: '#96ceb4', jpeg: '#96ceb4', gif: '#96ceb4', svg: '#96ceb4',
+        mp3: '#6c5ce7', wav: '#6c5ce7', mp4: '#e056a0', mov: '#e056a0',
+        zip: '#ffeaa7', js: '#ffeaa7', ts: '#45b7d1', json: '#ffeaa7', sh: '#4ecdc4',
+        py: '#4ecdc4', html: '#ff9f6b', css: '#45b7d1'
+      };
+      return map[ext] || '#4ecdc4';
+    }
+
+    _makeTerminalPortal() {
+      const x = 320;
+      const ty = getTerrainY(this.terrain, x);
+      return {
+        x, y: ty - 60, radius: 26, kind: 'terminal',
+        label: 'Terminal', color: '#4ecdc4',
+        pulse: Math.random() * Math.PI * 2, activated: false, glowIntensity: 0
+      };
+    }
+
+    // Replace the procedural portals with one Terminal portal + a portal per
+    // real Desktop file. `files` = [{ name, path, isDir, ext }].
+    setNativeFiles(files) {
+      if (!Array.isArray(files)) return;
+      const list = files.slice(0, 40);
+      const portals = [];
+      const term = this._makeTerminalPortal();
+      this.terminalPortal = term;
+      portals.push(term);
+      const span = CFG.WORLD_WIDTH - 900;
+      list.forEach((f, i) => {
+        const x = 600 + (list.length > 1 ? (i / (list.length - 1)) * span : span * 0.5);
+        const ty = getTerrainY(this.terrain, x);
+        portals.push({
+          x, y: ty - 48, radius: 18, kind: 'file',
+          filePath: f.path, isDir: f.isDir,
+          label: f.name.length > 14 ? f.name.slice(0, 13) + '…' : f.name,
+          ext: f.ext || (f.isDir ? 'dir' : ''),
+          color: this._extColor(f.ext, f.isDir),
+          pulse: Math.random() * Math.PI * 2, activated: false, glowIntensity: 0
+        });
+      });
+      this.portals = portals;
+    }
+
+    enterComputer() {
+      if (this.computerMode) return;
+      this.computerMode = true;
+      this.showInteraction('Terminal', '#4ecdc4');
+      if (this.onTerminalEnter) this.onTerminalEnter();
+    }
+
+    exitComputer() {
+      if (!this.computerMode) return;
+      this.computerMode = false;
+      if (this.onTerminalExit) this.onTerminalExit();
     }
 
     init() {
@@ -557,18 +759,24 @@ const InteractiveWorld = (() => {
     setupInput() {
       document.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
+        // In computer mode the keyboard belongs to the terminal — don't steer
+        // the player. Escape leaves the computer.
+        if (this.computerMode) {
+          if (key === 'escape') this.exitComputer();
+          return;
+        }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = true;
         else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'e' || key === 'm') {
           if (key === 'e') this.interactWithPortal();
           else if (key === 'm') this.showMinimap = !this.showMinimap;
-          else this.keys[key] = true;
+          else this.keys[key === ' ' ? 'space' : key] = true;
         }
       });
       document.addEventListener('keyup', (e) => {
         const key = e.key.toLowerCase();
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = false;
-        else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd') this.keys[key] = false;
+        else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd') this.keys[key === ' ' ? 'space' : key] = false;
       });
       this.canvas.addEventListener('click', (e) => {
         const rect = this.canvas.getBoundingClientRect();
@@ -605,6 +813,15 @@ const InteractiveWorld = (() => {
     activatePortal(portal) {
       portal.activated = !portal.activated;
       portal.pulse = 0;
+      if (portal.kind === 'terminal') {
+        this.enterComputer();
+        return;
+      }
+      if (portal.kind === 'file') {
+        this.showInteraction((portal.isDir ? '📂 ' : '📄 ') + portal.label, portal.color);
+        if (this.onFileOpen) this.onFileOpen(portal.filePath);
+        return;
+      }
       this.showInteraction(portal.label, portal.color);
     }
 
@@ -628,6 +845,19 @@ const InteractiveWorld = (() => {
     }
 
     update() {
+      // Computer mode: the player sits at the terminal and types — freeze
+      // world movement, grow the monitor, and run the typing animation.
+      if (this.computerMode) {
+        this.keys.left = this.keys.right = this.keys.a = this.keys.d = false;
+        this.keys.up = this.keys.w = this.keys.space = false;
+        this.player.isTyping = true;
+        this.player.typeFrame = (this.player.typeFrame || 0) + 0.35;
+        this.computerGrow = Math.min(1, this.computerGrow + 0.08);
+      } else {
+        this.player.isTyping = false;
+        this.computerGrow = Math.max(0, this.computerGrow - 0.1);
+      }
+
       this.player.update(this.keys, this.terrain, this.platforms, this.portals, this.chests);
 
       const tCX = this.player.x + this.player.w / 2 - this.canvas.width * 0.35;
@@ -659,7 +889,14 @@ const InteractiveWorld = (() => {
       for (const c of this.chests) c.pulse += 0.02;
       for (const c of this.crystals) { c.rot += 0.02; c.floatOffset += 0.03; }
       for (const p of this.particles) p.update();
-      for (const c of this.creatures) c.update();
+      const daylight = Math.max(0, 1 - Math.abs(this.timeOfDay - 0.5) * 2.5);
+      const creatureCtx = {
+        player: { x: this.player.x + this.player.w / 2, y: this.player.y + this.player.h / 2 },
+        neighbors: this.creatures,
+        daylight,
+        lights: daylight < 0.4 ? [{ x: this.player.x + this.player.w / 2, y: this.player.y }] : []
+      };
+      for (const c of this.creatures) c.update(creatureCtx);
       for (const s of this.stars) s.tw += s.sp;
       this.time += 0.016;
 
@@ -686,11 +923,69 @@ const InteractiveWorld = (() => {
       this.drawPortals(ctx, cx, cy, W, H);
       this.drawCreatures(ctx, cx, cy, W, H);
       this.player.draw(ctx, cx, cy, this._playerColor);
+      if (this.computerGrow > 0.01) this.drawComputer(ctx, cx, cy);
       this.drawParticles(ctx, cx, cy, W, H);
       this.drawWeather(ctx, cx, cy, W, H);
       this.drawInteractions(ctx, W, H);
       this.drawHUD(ctx, W);
       if (this.showMinimap) this.drawMinimap(ctx, W, H);
+    }
+
+    // The Terminal portal "grows" into a big monitor the player types at. The
+    // real, usable terminal is the HTML overlay the studio shows on enter; this
+    // is the in-world flavor that sits behind it.
+    drawComputer(ctx, cx, cy) {
+      const portal = this.terminalPortal;
+      if (!portal) return;
+      const g = this.computerGrow;
+      const baseX = portal.x - cx;
+      const groundY = getTerrainY(this.terrain, portal.x) - cy;
+
+      // Monitor dimensions scale up as it grows in.
+      const mw = 150 * g;
+      const mh = 100 * g;
+      const standH = 26 * g;
+      const mx = baseX - mw / 2;
+      const my = groundY - standH - mh;
+
+      ctx.save();
+      // Stand.
+      ctx.fillStyle = '#2a2a3a';
+      ctx.fillRect(baseX - 18 * g, groundY - standH, 36 * g, standH);
+      ctx.fillRect(baseX - 34 * g, groundY - 5 * g, 68 * g, 6 * g);
+
+      // Bezel.
+      ctx.fillStyle = '#15151f';
+      ctx.strokeStyle = '#4ecdc4';
+      ctx.lineWidth = 2;
+      ctx.fillRect(mx, my, mw, mh);
+      ctx.strokeRect(mx, my, mw, mh);
+
+      // Screen with glow.
+      ctx.shadowColor = 'rgba(78, 205, 196, 0.6)';
+      ctx.shadowBlur = 24 * g;
+      ctx.fillStyle = '#06120f';
+      const pad = 8 * g;
+      ctx.fillRect(mx + pad, my + pad, mw - pad * 2, mh - pad * 2);
+      ctx.shadowBlur = 0;
+
+      // Fake scrolling code lines + blinking cursor (decorative; real I/O is the overlay).
+      ctx.fillStyle = 'rgba(78, 205, 196, 0.7)';
+      const lineH = 9 * g;
+      const sx0 = mx + pad + 4 * g;
+      let ly = my + pad + 8 * g;
+      const rows = Math.floor((mh - pad * 2 - 8 * g) / lineH);
+      for (let i = 0; i < rows; i++) {
+        const w = ((Math.sin(i * 1.7 + Math.floor(this.time)) * 0.5 + 0.5) * (mw - pad * 2 - 12 * g));
+        ctx.globalAlpha = 0.35 + (i / rows) * 0.4;
+        ctx.fillRect(sx0, ly, Math.max(6 * g, w), 2.5 * g);
+        ly += lineH;
+      }
+      ctx.globalAlpha = 1;
+      if (Math.floor(this.time * 2) % 2 === 0) {
+        ctx.fillRect(sx0, ly - lineH + 1, 5 * g, 6 * g);
+      }
+      ctx.restore();
     }
 
     drawSky(ctx, W, H, cx, cy) {
@@ -1150,12 +1445,16 @@ const InteractiveWorld = (() => {
 
     loop(timestamp) {
       if (!this.isRunning) return;
-      this.deltaTime = timestamp - this.lastTime;
+      const interval = 1000 / (DEFAULTS.TARGET_FPS || 30);
+      this.deltaTime += timestamp - this.lastTime;
       this.lastTime = timestamp;
-      if (this.deltaTime >= 1000 / (DEFAULTS.TARGET_FPS || 30)) {
+      // Accumulate elapsed time and step the sim whenever a frame's worth has
+      // passed. Reassigning (rather than accumulating) here was the bug that
+      // froze the world on any display faster than the target FPS.
+      if (this.deltaTime >= interval) {
         this.update();
         this.draw();
-        this.deltaTime = 0;
+        this.deltaTime = Math.min(this.deltaTime % interval, interval);
       }
       requestAnimationFrame((t) => this.loop(t));
     }
@@ -1163,6 +1462,9 @@ const InteractiveWorld = (() => {
     start() {
       this.isRunning = true;
       this.lastTime = performance.now();
+      this.deltaTime = 0;
+      this.update();
+      this.draw();
       this.loop(this.lastTime);
     }
 
