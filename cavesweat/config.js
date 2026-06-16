@@ -22,7 +22,11 @@ const DEFAULT_WORLD = {
     creatures: 15,
     chests: 5,
     crystals: 8,
-    particles: 60
+    particles: 60,
+    shovelsSurface: 12,
+    shovelsCave: 8,
+    sticksSurface: 16,
+    sticksCave: 12
   },
   caves: {
     enabled: true,
@@ -30,6 +34,19 @@ const DEFAULT_WORLD = {
     tunnelRadius: 30,
     sealedPockets: 6,
     lavaOffset: 140
+  },
+  heaven: {
+    enabled: true,
+    altitude: 280,
+    ascentPlatforms: 28,
+    cloudPlatforms: 14,
+    trees: 10,
+    freezeRate: 0.12
+  },
+  survival: {
+    runSweatMult: 1.8,
+    surfaceIdleSweat: 0.015,
+    idleDeepMult: 0.65
   },
   visuals: {
     skyTop: '#0a0a1a',
@@ -51,6 +68,8 @@ function configToDefaults(config = {}) {
   const p = { ...DEFAULT_WORLD.physics, ...config.physics };
   const e = { ...DEFAULT_WORLD.entities, ...config.entities };
   const c = { ...DEFAULT_WORLD.caves, ...config.caves };
+  const h = { ...DEFAULT_WORLD.heaven, ...config.heaven };
+  const s = { ...DEFAULT_WORLD.survival, ...config.survival };
   const v = { ...DEFAULT_WORLD.visuals, ...config.visuals };
 
   return {
@@ -66,11 +85,24 @@ function configToDefaults(config = {}) {
     WORLD_CHEST_COUNT: e.chests,
     WORLD_CRYSTAL_COUNT: e.crystals,
     WORLD_PARTICLE_COUNT: e.particles,
+    WORLD_SHOVELS_SURFACE: e.shovelsSurface,
+    WORLD_SHOVELS_CAVE: e.shovelsCave,
+    WORLD_STICKS_SURFACE: e.sticksSurface,
+    WORLD_STICKS_CAVE: e.sticksCave,
     WORLD_CAVE_ENABLED: c.enabled !== false,
     WORLD_CAVE_ENTRANCES: c.entrances,
     WORLD_CAVE_TUNNEL_RADIUS: c.tunnelRadius,
     WORLD_CAVE_SEALED_POCKETS: c.sealedPockets,
     WORLD_CAVE_LAVA_OFFSET: c.lavaOffset,
+    WORLD_HEAVEN_ENABLED: h.enabled === true,
+    WORLD_HEAVEN_ALTITUDE: h.altitude,
+    WORLD_HEAVEN_ASCENT_PLATFORMS: h.ascentPlatforms,
+    WORLD_HEAVEN_CLOUD_PLATFORMS: h.cloudPlatforms,
+    WORLD_HEAVEN_TREES: h.trees,
+    WORLD_HEAVEN_FREEZE_RATE: h.freezeRate,
+    WORLD_SURVIVAL_RUN_SWEAT_MULT: s.runSweatMult,
+    WORLD_SURVIVAL_SURFACE_IDLE_SWEAT: s.surfaceIdleSweat,
+    WORLD_SURVIVAL_IDLE_DEEP_MULT: s.idleDeepMult,
     WORLD_SKY_TOP: v.skyTop,
     WORLD_SKY_BOTTOM: v.skyBottom,
     WORLD_GROUND_TOP: v.groundTop,
@@ -109,6 +141,8 @@ function validateConfig(config) {
   const p = config.physics || {};
   const e = config.entities || {};
   const c = config.caves || {};
+  const h = config.heaven || {};
+  const s = config.survival || {};
 
   if (w.width != null && (w.width < 1000 || w.width > 20000)) {
     errors.push('world.width must be between 1000 and 20000');
@@ -132,12 +166,41 @@ function validateConfig(config) {
     ['entities.creatures', e.creatures, 0, 80],
     ['entities.chests', e.chests, 0, 40],
     ['entities.crystals', e.crystals, 0, 60],
-    ['entities.particles', e.particles, 0, 300]
+    ['entities.particles', e.particles, 0, 300],
+    ['entities.shovelsSurface', e.shovelsSurface, 0, 40],
+    ['entities.shovelsCave', e.shovelsCave, 0, 40],
+    ['entities.sticksSurface', e.sticksSurface, 0, 60],
+    ['entities.sticksCave', e.sticksCave, 0, 60]
   ];
   for (const [label, val, min, max] of counts) {
     if (val != null && (val < min || val > max)) {
       errors.push(`${label} must be between ${min} and ${max}`);
     }
+  }
+
+  if (h.altitude != null && (h.altitude < 80 || h.altitude > 600)) {
+    errors.push('heaven.altitude must be between 80 and 600');
+  }
+  if (h.ascentPlatforms != null && (h.ascentPlatforms < 0 || h.ascentPlatforms > 60)) {
+    errors.push('heaven.ascentPlatforms must be between 0 and 60');
+  }
+  if (h.cloudPlatforms != null && (h.cloudPlatforms < 0 || h.cloudPlatforms > 40)) {
+    errors.push('heaven.cloudPlatforms must be between 0 and 40');
+  }
+  if (h.trees != null && (h.trees < 0 || h.trees > 40)) {
+    errors.push('heaven.trees must be between 0 and 40');
+  }
+  if (h.freezeRate != null && (h.freezeRate < 0.01 || h.freezeRate > 1)) {
+    errors.push('heaven.freezeRate must be between 0.01 and 1');
+  }
+  if (s.runSweatMult != null && (s.runSweatMult < 0.5 || s.runSweatMult > 5)) {
+    errors.push('survival.runSweatMult must be between 0.5 and 5');
+  }
+  if (s.surfaceIdleSweat != null && (s.surfaceIdleSweat < 0 || s.surfaceIdleSweat > 0.5)) {
+    errors.push('survival.surfaceIdleSweat must be between 0 and 0.5');
+  }
+  if (s.idleDeepMult != null && (s.idleDeepMult < 0.1 || s.idleDeepMult > 2)) {
+    errors.push('survival.idleDeepMult must be between 0.1 and 2');
   }
 
   return errors;

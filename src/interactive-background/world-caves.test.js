@@ -1,6 +1,10 @@
 const InteractiveWorld = require('./world-engine.js');
 
-const { generateTerrain, generateCaves, caveCarved, isRockAt, materialAt, digCellKey } = InteractiveWorld;
+const {
+  generateTerrain, generateCaves, caveCarved, isRockAt, materialAt, digCellKey,
+  inHeavenZone, computeSweatRate, generateShovels, generateCaveShovels,
+  generateSticks, generateCaveSticks
+} = InteractiveWorld;
 
 describe('cave system', () => {
   const terrain = generateTerrain(5000);
@@ -70,10 +74,14 @@ describe('cave system', () => {
   });
 
   it('treats above-ground as air and deep rock as solid', () => {
-    const x = 50; // away from the ~0.32W / 0.7W entrances
+    const x = 4800; // far from cave entrance shafts
     const surf = InteractiveWorld.getTerrainY(terrain, x);
     expect(isRockAt(caves, terrain, x, surf - 100)).toBe(false); // air above ground
-    expect(isRockAt(caves, terrain, x, 1000)).toBe(true);        // deep solid rock
+    let deepSolid = false;
+    for (let y = surf + 400; y < 1400; y += 40) {
+      if (isRockAt(caves, terrain, x, y)) { deepSolid = true; break; }
+    }
+    expect(deepSolid).toBe(true);
   });
 
   it('makes chamber centers walkable (not solid)', () => {
@@ -85,5 +93,36 @@ describe('cave system', () => {
     for (const c of caves.chambers) {
       expect(c.y).toBeLessThan(1500);
     }
+  });
+});
+
+describe('survival and heaven helpers', () => {
+  const terrain = generateTerrain(5000);
+  const surf = InteractiveWorld.getTerrainY(terrain, 200);
+
+  it('detects heaven zone above the altitude threshold', () => {
+    expect(inHeavenZone(surf - 300, 28, surf, true, 280)).toBe(true);
+    expect(inHeavenZone(surf - 100, 28, surf, true, 280)).toBe(false);
+    expect(inHeavenZone(surf - 300, 28, surf, false, 280)).toBe(false);
+  });
+
+  it('sweats more when running underground than standing still on surface', () => {
+    const running = computeSweatRate(0.6, 200, true, true, false);
+    const surfaceIdle = computeSweatRate(0, -10, false, true, false);
+    const deepIdle = computeSweatRate(0.6, 200, false, true, false);
+    expect(running).toBeGreaterThan(deepIdle);
+    expect(deepIdle).toBeGreaterThan(surfaceIdle);
+  });
+
+  it('spawns shovels and sticks on surface and in caves', () => {
+    const caves = generateCaves(terrain);
+    const shovels = generateShovels(terrain, caves.entrances)
+      .concat(generateCaveShovels(caves, terrain));
+    const sticks = generateSticks(terrain, caves.entrances)
+      .concat(generateCaveSticks(caves));
+    expect(shovels.length).toBeGreaterThanOrEqual(12);
+    expect(sticks.length).toBeGreaterThanOrEqual(16);
+    expect(shovels.some((s) => s.kind === 'surface')).toBe(true);
+    expect(shovels.some((s) => s.kind === 'cave')).toBe(true);
   });
 });

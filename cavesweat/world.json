@@ -1,6 +1,6 @@
 {
   "name": "Cavesweat",
-  "description": "Explore sprawling cave networks beneath the surface. Dig for sealed loot pockets, survive the lava zone, and map the underground.",
+  "description": "Explore sprawling cave networks beneath the surface. Dig for sealed loot pockets, survive the lava zone, climb to the heavens, and map the underground.",
   "world": {
     "width": 5000,
     "height": 1500,
@@ -17,7 +17,11 @@
     "creatures": 15,
     "chests": 5,
     "crystals": 8,
-    "particles": 60
+    "particles": 60,
+    "shovelsSurface": 12,
+    "shovelsCave": 8,
+    "sticksSurface": 16,
+    "sticksCave": 12
   },
   "caves": {
     "enabled": true,
@@ -25,6 +29,19 @@
     "tunnelRadius": 30,
     "sealedPockets": 6,
     "lavaOffset": 140
+  },
+  "heaven": {
+    "enabled": true,
+    "altitude": 280,
+    "ascentPlatforms": 28,
+    "cloudPlatforms": 14,
+    "trees": 10,
+    "freezeRate": 0.12
+  },
+  "survival": {
+    "runSweatMult": 1.8,
+    "surfaceIdleSweat": 0.015,
+    "idleDeepMult": 0.65
   },
   "visuals": {
     "skyTop": "#0a0a1a",
