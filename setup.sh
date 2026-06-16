@@ -67,8 +67,19 @@ if [ "$RUN" -eq 1 ]; then
       EXTRA="--no-sandbox"
     fi
   fi
-  info "Launching Deepiri Lyback..."
-  exec npx electron electron/main.js $EXTRA
+  # Run detached so it keeps going after this shell exits (it's a wallpaper app)
+  # and the terminal is returned to you immediately. The app's single-instance
+  # lock means re-running --run just focuses/forwards to the running window.
+  ELECTRON="node_modules/.bin/electron"
+  [ -x "$ELECTRON" ] || ELECTRON="npx electron"
+  LOG="${TMPDIR:-/tmp}/deepiri-lyback.log"
+  info "Launching Deepiri Lyback in the background..."
+  nohup $ELECTRON electron/main.js $EXTRA >"$LOG" 2>&1 &
+  PID=$!
+  disown 2>/dev/null || true
+  info "Running as PID ${PID} (logs: ${LOG})"
+  info "Stop it with:  ${BOLD}kill ${PID}${RESET}"
+  exit 0
 fi
 
 info "Done. Launch the studio anytime with:  ${BOLD}./setup.sh --run${RESET}   (or  npm start)"
