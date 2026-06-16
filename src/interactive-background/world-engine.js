@@ -13,6 +13,9 @@ const InteractiveWorld = (() => {
     WALL_SLIDE_SPEED: 2.8,
     WALL_GRAB_FRAMES: 40,
     WALL_JUMP_IGNORE_FRAMES: 12,
+    COYOTE_FRAMES: 12,
+    JUMP_BUFFER_FRAMES: 10,
+    DOUBLE_JUMP_MULT: 0.95,
     PLAYER_W: 18,
     PLAYER_H: 28,
     PLATFORM_COUNT: DEFAULTS.WORLD_PLATFORM_COUNT || 10,
@@ -33,6 +36,8 @@ const InteractiveWorld = (() => {
     HEAVEN_CLOUD_PLATFORMS: DEFAULTS.WORLD_HEAVEN_CLOUD_PLATFORMS ?? 14,
     HEAVEN_TREES: DEFAULTS.WORLD_HEAVEN_TREES ?? 10,
     HEAVEN_FREEZE_RATE: DEFAULTS.WORLD_HEAVEN_FREEZE_RATE ?? 0.12,
+    HEAVEN_SKY_HEIGHT: DEFAULTS.WORLD_HEAVEN_SKY_HEIGHT ?? 400,
+    ASCENT_STEP_Y: 46,
     SURVIVAL_RUN_SWEAT_MULT: DEFAULTS.WORLD_SURVIVAL_RUN_SWEAT_MULT ?? 1.8,
     SURVIVAL_SURFACE_IDLE_SWEAT: DEFAULTS.WORLD_SURVIVAL_SURFACE_IDLE_SWEAT ?? 0.015,
     SURVIVAL_IDLE_DEEP_MULT: DEFAULTS.WORLD_SURVIVAL_IDLE_DEEP_MULT ?? 0.65,
@@ -92,48 +97,87 @@ const InteractiveWorld = (() => {
     return platforms;
   }
 
+  // Stepping-stone tower from the surface lip up to the heaven cloud layer.
+  function buildAscentTower(platforms, heights, towerX) {
+    const surf = getTerrainY(heights, towerX);
+    const biome = getBiome(towerX);
+    const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
+    const goalY = heavenLine + 45;
+    const startY = surf - 10;
+    const stepY = CFG.ASCENT_STEP_Y;
+    const steps = Math.max(5, Math.ceil((startY - goalY) / stepY));
+    let px = towerX;
+
+    platforms.push({
+      x: px - 52, y: startY, w: 104, h: 12,
+      color: biome.accent, kind: 'solid'
+    });
+
+    for (let i = 1; i <= steps; i++) {
+      const py = Math.max(goalY, startY - i * stepY);
+      px += (i % 2 === 0 ? 1 : -1) * (24 + Math.random() * 22);
+      platforms.push({
+        x: px - 42, y: py, w: 84 + Math.random() * 28, h: 12,
+        color: biome.accent, kind: 'solid'
+      });
+      if (py <= goalY) break;
+    }
+  }
+
   // Stepping-stone platforms between ground and the heaven cloud layer.
   function generateAscentPlatforms(heights, entrances) {
     if (!CFG.HEAVEN_ENABLED) return [];
     const platforms = [];
-    const count = CFG.HEAVEN_ASCENT_PLATFORMS;
-    const clusters = Math.max(3, Math.floor(count / 5));
-    for (let c = 0; c < clusters; c++) {
-      const baseX = entrances && entrances.length
-        ? entrances[c % entrances.length] + (Math.random() - 0.5) * 220
-        : 300 + (c / clusters) * (CFG.WORLD_WIDTH - 600) + (Math.random() - 0.5) * 200;
-      const surf = getTerrainY(heights, baseX);
-      const heavenY = surf - CFG.HEAVEN_ALTITUDE;
-      const perCluster = Math.ceil(count / clusters);
-      let px = baseX, py = surf - 70;
-      for (let i = 0; i < perCluster && platforms.length < count; i++) {
-        px += (Math.random() - 0.3) * 90;
-        py -= 35 + Math.random() * 45;
-        if (py < heavenY + 20) py = heavenY + 20 + Math.random() * 40;
-        const biome = getBiome(px);
-        platforms.push({
-          x: px, y: py, w: 65 + Math.random() * 55, h: 12,
-          color: biome.accent, kind: 'solid'
-        });
-      }
+    const spots = entrances && entrances.length
+      ? entrances.slice()
+      : [CFG.WORLD_WIDTH * 0.15, CFG.WORLD_WIDTH * 0.4, CFG.WORLD_WIDTH * 0.65, CFG.WORLD_WIDTH * 0.85];
+
+    for (const ex of spots) {
+      buildAscentTower(platforms, heights, ex - 110);
+      buildAscentTower(platforms, heights, ex + 90);
     }
-    return platforms;
+    for (const frac of [0.28, 0.52, 0.76]) {
+      buildAscentTower(platforms, heights, CFG.WORLD_WIDTH * frac + (Math.random() - 0.5) * 160);
+    }
+
+    while (platforms.length < CFG.HEAVEN_ASCENT_PLATFORMS) {
+      const x = 250 + Math.random() * (CFG.WORLD_WIDTH - 500);
+      const surf = getTerrainY(heights, x);
+      const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
+      const y = surf - 80 - Math.random() * (surf - heavenLine - 100);
+      if (y < heavenLine + 30) break;
+      platforms.push({
+        x: x - 35, y, w: 70 + Math.random() * 40, h: 12,
+        color: getBiome(x).accent, kind: 'solid'
+      });
+    }
+    return platforms.slice(0, CFG.HEAVEN_ASCENT_PLATFORMS);
   }
 
-  // Soft cloud platforms in the heaven zone — only reachable after climbing ascent tier.
+  // Soft cloud platforms in the heaven zone — reachable after climbing ascent towers.
   function generateCloudPlatforms(heights) {
     if (!CFG.HEAVEN_ENABLED) return [];
     const platforms = [];
-    for (let i = 0; i < CFG.HEAVEN_CLOUD_PLATFORMS; i++) {
-      const x = 200 + Math.random() * (CFG.WORLD_WIDTH - 400);
-      const surf = getTerrainY(heights, x);
+    const clusters = Math.max(5, Math.ceil(CFG.HEAVEN_CLOUD_PLATFORMS / 5));
+    const perCluster = Math.ceil(CFG.HEAVEN_CLOUD_PLATFORMS / clusters);
+    const skyDepth = CFG.HEAVEN_SKY_HEIGHT * 0.4;
+
+    for (let c = 0; c < clusters; c++) {
+      const cx = 180 + Math.random() * (CFG.WORLD_WIDTH - 360);
+      const surf = getTerrainY(heights, cx);
       const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
-      const y = heavenLine - 20 - Math.random() * 120;
-      platforms.push({
-        x, y, w: 100 + Math.random() * 60, h: 14,
-        color: 'rgba(255,255,255,0.85)', kind: 'cloud',
-        bob: Math.random() * Math.PI * 2, bobAmp: 2 + Math.random() * 3
-      });
+      let px = cx;
+      let py = heavenLine - 25;
+      for (let i = 0; i < perCluster && platforms.length < CFG.HEAVEN_CLOUD_PLATFORMS; i++) {
+        px += (Math.random() - 0.5) * 100;
+        py -= 30 + Math.random() * 32;
+        if (py < heavenLine - skyDepth) py = heavenLine - 30 - Math.random() * 60;
+        platforms.push({
+          x: px, y: py, w: 110 + Math.random() * 50, h: 14,
+          color: 'rgba(255,255,255,0.85)', kind: 'cloud',
+          bob: Math.random() * Math.PI * 2, bobAmp: 2 + Math.random() * 3
+        });
+      }
     }
     return platforms;
   }
@@ -644,6 +688,11 @@ const InteractiveWorld = (() => {
     return plat.y;
   }
 
+  function heavenCamMinY() {
+    if (!CFG.HEAVEN_ENABLED) return 0;
+    return -(CFG.HEAVEN_SKY_HEIGHT + 100);
+  }
+
   // Dig materials. `hardness` = chips needed to break through a spot AND the
   // wear it puts on the shovel. Softer up top (sand/dirt), brutal down deep.
   const MATERIALS = {
@@ -997,6 +1046,43 @@ const InteractiveWorld = (() => {
       this.wallSide = 0;
       this.wallGrabTimer = 0;
       this._wallJumpIgnore = 0;
+      this._coyote = 0;
+      this._jumpBuffer = 0;
+      this._jumpHeld = false;
+      this._digTarget = null;
+      this._rubProgress = 0;
+    }
+
+    tryJump(keys) {
+      if (this.wallSide !== 0) {
+        this.vy = CFG.JUMP_FORCE * 0.92;
+        this.vx = -this.wallSide * CFG.WALL_KICK_SPEED;
+        this.facing = -this.wallSide;
+        this._wallJumpIgnore = CFG.WALL_JUMP_IGNORE_FRAMES;
+        this.wallSide = 0;
+        this.wallGrabTimer = 0;
+        this.onGround = false;
+        this.canDoubleJump = true;
+        this._coyote = 0;
+        this._jumpBuffer = 0;
+        return true;
+      }
+      const grounded = this.onGround || this._coyote > 0;
+      if (grounded) {
+        this.vy = CFG.JUMP_FORCE;
+        this.onGround = false;
+        this.canDoubleJump = true;
+        this._coyote = 0;
+        this._jumpBuffer = 0;
+        return true;
+      }
+      if (this.canDoubleJump) {
+        this.vy = CFG.JUMP_FORCE * CFG.DOUBLE_JUMP_MULT;
+        this.canDoubleJump = false;
+        this._jumpBuffer = 0;
+        return true;
+      }
+      return false;
     }
 
     update(keys, heights, platforms, portals, chests, caves, time) {
@@ -1006,30 +1092,13 @@ const InteractiveWorld = (() => {
       if (this._wallJumpIgnore > 0) this._wallJumpIgnore--;
 
       const jumpKey = keys.up || keys.w || keys.space;
-      if (jumpKey && !keys._jumpHeld) {
-        if (this.wallSide !== 0) {
-          // Kick off the wall — horizontal boost away + upward hop.
-          this.vy = CFG.JUMP_FORCE * 0.92;
-          this.vx = -this.wallSide * CFG.WALL_KICK_SPEED;
-          this.facing = -this.wallSide;
-          this._wallJumpIgnore = CFG.WALL_JUMP_IGNORE_FRAMES;
-          this.wallSide = 0;
-          this.wallGrabTimer = 0;
-          this.onGround = false;
-          this.canDoubleJump = true;
-          keys._jumpHeld = true;
-        } else if (this.onGround) {
-          this.vy = CFG.JUMP_FORCE;
-          this.onGround = false;
-          this.canDoubleJump = true;
-          keys._jumpHeld = true;
-        } else if (this.canDoubleJump) {
-          this.vy = CFG.JUMP_FORCE * 0.85;
-          this.canDoubleJump = false;
-          keys._jumpHeld = true;
-        }
+      if (keys.jumpPressed) {
+        if (!this.tryJump(keys)) this._jumpBuffer = CFG.JUMP_BUFFER_FRAMES;
+      } else if (jumpKey && !this._jumpHeld) {
+        if (!this.tryJump(keys)) this._jumpBuffer = CFG.JUMP_BUFFER_FRAMES;
+        this._jumpHeld = true;
       }
-      if (!jumpKey) keys._jumpHeld = false;
+      if (!jumpKey) this._jumpHeld = false;
 
       if (moveX !== 0) {
         this.vx = moveX * CFG.MOVE_SPEED;
@@ -1132,6 +1201,10 @@ const InteractiveWorld = (() => {
 
       if (this.x < 0) { this.x = 0; this.vx = 0; }
       if (this.x + this.w > CFG.WORLD_WIDTH) { this.x = CFG.WORLD_WIDTH - this.w; this.vx = 0; }
+      if (CFG.HEAVEN_ENABLED && this.y < -CFG.HEAVEN_SKY_HEIGHT) {
+        this.y = -CFG.HEAVEN_SKY_HEIGHT;
+        this.vy = 0;
+      }
       if (this.y > CFG.WORLD_HEIGHT + 200) { this.y = 200; this.vy = 0; }
 
       if (this.isMoving && this.onGround) this.walkFrame += 0.12;
@@ -1140,6 +1213,17 @@ const InteractiveWorld = (() => {
       if (this.portalCooldown > 0) this.portalCooldown--;
       if (this.landDust > 0) this.landDust--;
       if (this.digCooldown > 0) this.digCooldown--;
+
+      if (this.onGround) {
+        this._coyote = CFG.COYOTE_FRAMES;
+        if (this._jumpBuffer > 0) {
+          this.tryJump(keys);
+          this._jumpBuffer = 0;
+        }
+      } else if (this._coyote > 0) {
+        this._coyote--;
+      }
+      if (this._jumpBuffer > 0 && !this.onGround) this._jumpBuffer--;
 
       for (const p of portals) {
         const dx = (this.x + this.w / 2) - p.x;
@@ -1233,7 +1317,11 @@ const InteractiveWorld = (() => {
       this.deltaTime = 0;
       this.mode = options.mode || 'world';
       this.interactive = options.interactive !== false;
-      this.keys = { _jumpHeld: false };
+      this.twoPlayer = options.twoPlayer === true;
+      this.onEscape = options.onEscape || null;
+      this.keys = { jumpPressed: false, jumpPressedP1: false, jumpPressedP2: false };
+      this.players = [];
+      this._playerColors = ['#4ecdc4', '#ff9f43'];
       this.cameraX = 0;
       this.cameraY = 0;
       this.interactables = [];
@@ -1346,15 +1434,17 @@ const InteractiveWorld = (() => {
       this.stickPickups = generateSticks(this.terrain, this.caves.entrances)
         .concat(generateCaveSticks(this.caves));
       this.fires = [];
-      this._rubProgress = 0;
       this.heat = 0;
-      this._digTarget = null;
       const layout = layoutCaveProps(this.caves, this.terrain);
       this.caveChests = layout.caveChests;
       this.buckets = layout.buckets;
 
       const startY = getTerrainY(this.terrain, 100);
-      this.player = new Player(100, startY - CFG.PLAYER_H - 5);
+      this.players = [new Player(100, startY - CFG.PLAYER_H - 5)];
+      if (this.twoPlayer) {
+        this.players.push(new Player(135, startY - CFG.PLAYER_H - 5));
+      }
+      this.player = this.players[0];
 
       this.particles = [];
       for (let i = 0; i < CFG.PARTICLE_COUNT; i++) {
@@ -1399,6 +1489,47 @@ const InteractiveWorld = (() => {
       }
     }
 
+    playersCenter() {
+      let x = 0, y = 0;
+      for (const p of this.players) {
+        x += p.x + p.w / 2;
+        y += p.y + p.h / 2;
+      }
+      const n = this.players.length;
+      return { x: x / n, y: y / n };
+    }
+
+    playerKeys(index) {
+      if (!this.twoPlayer) return this.keys;
+      if (index === 0) {
+        return {
+          left: this.keys.a, right: this.keys.d,
+          a: this.keys.a, d: this.keys.d, w: this.keys.w, s: this.keys.s,
+          space: this.keys.space,
+          jumpPressed: this.keys.jumpPressedP1,
+          r: this.keys.r
+        };
+      }
+      return {
+        left: this.keys.left, right: this.keys.right,
+        up: this.keys.up, down: this.keys.down,
+        jumpPressed: this.keys.jumpPressedP2,
+        r: this.keys.p2rub
+      };
+    }
+
+    nearestPlayer(x, y) {
+      let best = this.players[0];
+      let bestD = Infinity;
+      for (const p of this.players) {
+        const px = p.x + p.w / 2;
+        const py = p.y + p.h / 2;
+        const d = (px - x) * (px - x) + (py - y) * (py - y);
+        if (d < bestD) { bestD = d; best = p; }
+      }
+      return best;
+    }
+
     setupInput() {
       document.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
@@ -1408,18 +1539,55 @@ const InteractiveWorld = (() => {
           if (key === 'escape') this.exitComputer();
           return;
         }
+        if (key === 'escape' && this.onEscape) {
+          e.preventDefault();
+          this.onEscape();
+          return;
+        }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
-        if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = true;
+        if (this.twoPlayer) {
+          if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+            this.keys[key.replace('arrow', '')] = true;
+            if (key === 'arrowup') this.keys.jumpPressedP2 = true;
+            return;
+          }
+          if (key === '.') { e.preventDefault(); this.keys.p2dig = true; return; }
+          if (key === ',') { e.preventDefault(); this.keys.p2rub = true; return; }
+          if (key === 'f') { e.preventDefault(); this.keys.f = true; return; }
+          if (key === 'r') { e.preventDefault(); this.keys.r = true; return; }
+          if (key === 'e') { this.interactWithPortal(); return; }
+          if (key === 'm') { this.showMinimap = !this.showMinimap; return; }
+          if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd') {
+            this.keys[key === ' ' ? 'space' : key] = true;
+            if (key === ' ' || key === 'w') this.keys.jumpPressedP1 = true;
+          }
+          return;
+        }
+        if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+          this.keys[key.replace('arrow', '')] = true;
+          if (key === 'arrowup') this.keys.jumpPressed = true;
+        }
         else if (key === 'f') { e.preventDefault(); this.keys.f = true; }
         else if (key === 'r') { e.preventDefault(); this.keys.r = true; }
         else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'e' || key === 'm') {
           if (key === 'e') this.interactWithPortal();
           else if (key === 'm') this.showMinimap = !this.showMinimap;
-          else this.keys[key === ' ' ? 'space' : key] = true;
+          else {
+            this.keys[key === ' ' ? 'space' : key] = true;
+            if (key === ' ' || key === 'w') this.keys.jumpPressed = true;
+          }
         }
       });
       document.addEventListener('keyup', (e) => {
         const key = e.key.toLowerCase();
+        if (this.twoPlayer) {
+          if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+            this.keys[key.replace('arrow', '')] = false;
+            return;
+          }
+          if (key === '.') { this.keys.p2dig = false; return; }
+          if (key === ',') { this.keys.p2rub = false; return; }
+        }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = false;
         else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'f' || key === 'r') this.keys[key === ' ' ? 'space' : key] = false;
       });
@@ -1448,21 +1616,29 @@ const InteractiveWorld = (() => {
     }
 
     interactWithPortal() {
-      for (const p of this.portals) {
-        const dx = (this.player.x + this.player.w / 2) - p.x;
-        const dy = (this.player.y + this.player.h / 2) - p.y;
-        if (Math.sqrt(dx * dx + dy * dy) < p.radius + 40) { this.activatePortal(p); break; }
+      for (const portal of this.portals) {
+        let nearest = null;
+        let nearestD = Infinity;
+        for (const pl of this.players) {
+          const dx = (pl.x + pl.w / 2) - portal.x;
+          const dy = (pl.y + pl.h / 2) - portal.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < portal.radius + 40 && dist < nearestD) {
+            nearestD = dist;
+            nearest = portal;
+          }
+        }
+        if (nearest) { this.activatePortal(nearest); break; }
       }
     }
 
     // Carve a hole with the shovel: in front of the player, biased downward if
     // crouching. Dug holes become real walkable cave space (see caveCarved), so
     // the player can tunnel their own caves anywhere.
-    digAt() {
-      const p = this.player;
+    digAt(p, keys) {
       if (!p.hasShovel || p.digCooldown > 0) return;
       p.digCooldown = 2;
-      const digDown = this.keys.s || this.keys.down;
+      const digDown = keys.s || keys.down;
       const fx = p.x + p.w / 2 + (digDown ? 0 : p.facing * 16);
       const fy = p.y + p.h + (digDown ? 8 : -4);
 
@@ -1475,11 +1651,11 @@ const InteractiveWorld = (() => {
       // is keyed to a grid CELL (not the exact point) so progress keeps building
       // while the player runs — enter a new cell and that's fresh rock to chip.
       const { cellX, cellY } = digCellKey(fx, fy);
-      const t = this._digTarget;
+      const t = p._digTarget;
       if (!t || t.cellX !== cellX || t.cellY !== cellY) {
-        this._digTarget = { x: fx, y: fy, cellX, cellY, hits: 0, need: mat.hardness, mat };
+        p._digTarget = { x: fx, y: fy, cellX, cellY, hits: 0, need: mat.hardness, mat };
       }
-      const target = this._digTarget;
+      const target = p._digTarget;
       target.x = fx; target.y = fy;
       target.hits++;
 
@@ -1504,12 +1680,12 @@ const InteractiveWorld = (() => {
         const hy = cellY * DIG_CELL + DIG_CELL / 2;
         this.caves.digHoles.push({ x: hx, y: hy, r: 21 });
         if (this.caves.digHoles.length > 320) this.caves.digHoles.shift();
-        this._digTarget = null;
+        p._digTarget = null;
       }
 
       if (p.shovelDurability <= 0) {
         p.hasShovel = false;
-        this._digTarget = null;
+        p._digTarget = null;
         this.showInteraction('🛠️ Shovel broke! Find another', '#ff6b6b');
       }
     }
@@ -1518,8 +1694,7 @@ const InteractiveWorld = (() => {
 
     // Heat rises with depth: the player sweats out water, lava scorches, and
     // running dry sends them back to the surface. In heaven, freeze replaces sweat.
-    updateSurvival() {
-      const p = this.player;
+    updateSurvival(p, keys) {
       const cxp = p.x + p.w / 2;
       const surf = getTerrainY(this.terrain, cxp);
       const depth = (p.y + p.h / 2) - surf;
@@ -1532,10 +1707,10 @@ const InteractiveWorld = (() => {
         heat = 1.5;
         this.spawnHeatParticle(cxp + (Math.random() - 0.5) * 16, p.y + p.h);
       }
-      this.heat = Math.min(1, heat);
+      this.heat = Math.max(this.heat || 0, Math.min(1, heat));
 
       const heaven = inHeavenZone(p.y, p.h, surf, CFG.HEAVEN_ENABLED, CFG.HEAVEN_ALTITUDE);
-      this.inHeaven = heaven;
+      if (heaven) this.inHeaven = true;
 
       if (heaven) {
         let freezeRate = CFG.HEAVEN_FREEZE_RATE;
@@ -1546,50 +1721,32 @@ const InteractiveWorld = (() => {
             p.freeze = Math.max(0, p.freeze - 0.08);
           }
         }
-        if (!(this.keys.r && p.sticks >= 2)) {
+        if (!(keys.r && p.sticks >= 2)) {
           p.freeze += freezeRate;
         }
         p.freeze = Math.max(0, Math.min(p.maxFreeze, p.freeze));
-        if (p.freeze >= p.maxFreeze) this.killPlayer('freeze');
+        if (p.freeze >= p.maxFreeze) this.killPlayer(p, 'freeze');
       } else {
         if (p.freeze > 0) p.freeze = Math.max(0, p.freeze - 0.04);
         const sweatRate = computeSweatRate(heat, depth, p.isMoving, p.onGround, inLava);
         if (sweatRate > 0.02) {
           p.water -= sweatRate;
-          if (Math.random() < heat * 0.3) this.spawnSweat();
+          if (Math.random() < heat * 0.3) this.spawnSweat(p);
         } else if (p.water < p.maxWater) {
           p.water += 0.05 - sweatRate;
         }
         p.water = Math.max(0, Math.min(p.maxWater, p.water));
-        if (p.water <= 0) this.killPlayer('dehydrate');
+        if (p.water <= 0) this.killPlayer(p, 'dehydrate');
       }
 
-      for (const b of this.buckets) {
-        b.bob += 0.05;
-        const dx = cxp - b.x, dy = (p.y + p.h / 2) - b.y;
-        if (dx * dx + dy * dy < 26 * 26 && p.water < p.maxWater) {
-          p.water = p.maxWater;
-          this.showInteraction('💧 Refilled!', '#45b7d1');
-        }
-      }
-
-      for (const c of this.caveChests) {
-        c.pulse += 0.04;
-        if (!c.open) {
-          const dx = cxp - c.x, dy = (p.y + p.h / 2) - c.y;
-          if (dx * dx + dy * dy < 30 * 30) {
-            c.open = true;
-            this.showInteraction('📦 ' + c.loot, '#ffd479');
-          }
-        }
-      }
       if (p.deathFlash > 0) p.deathFlash--;
     }
 
-    killPlayer(reason) {
-      const p = this.player;
-      p.x = 100;
-      p.y = getTerrainY(this.terrain, 100) - p.h - 5;
+    killPlayer(p, reason) {
+      const idx = this.players.indexOf(p);
+      const spawnX = 100 + idx * 35;
+      p.x = spawnX;
+      p.y = getTerrainY(this.terrain, spawnX) - p.h - 5;
       p.vx = 0; p.vy = 0;
       p.water = p.maxWater;
       p.freeze = 0;
@@ -1601,8 +1758,7 @@ const InteractiveWorld = (() => {
       }
     }
 
-    spawnSweat() {
-      const p = this.player;
+    spawnSweat(p) {
       const pt = new WorldParticle(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT);
       pt.x = p.x + p.w / 2 + (Math.random() - 0.5) * 10;
       pt.y = p.y + 4;
@@ -1626,12 +1782,11 @@ const InteractiveWorld = (() => {
     }
 
     // Hold R with 2+ sticks for 10 seconds to start a fire and thaw freeze.
-    updateRubbing() {
-      const p = this.player;
-      if (this.keys.r && p.sticks >= 2) {
-        this._rubProgress++;
-        if (this._rubProgress >= CFG.RUB_FRAMES) {
-          this._rubProgress = 0;
+    updateRubbing(p, keys) {
+      if (keys.r && p.sticks >= 2) {
+        p._rubProgress++;
+        if (p._rubProgress >= CFG.RUB_FRAMES) {
+          p._rubProgress = 0;
           const fx = p.x + p.w / 2;
           const fy = p.y + p.h;
           this.fires.push({ x: fx, y: fy, life: 1800 });
@@ -1639,7 +1794,7 @@ const InteractiveWorld = (() => {
           this.showInteraction('🔥 Fire started!', '#ff8b3a');
         }
       } else {
-        this._rubProgress = 0;
+        p._rubProgress = 0;
       }
     }
 
@@ -1683,22 +1838,70 @@ const InteractiveWorld = (() => {
       if (this.computerMode) {
         this.keys.left = this.keys.right = this.keys.a = this.keys.d = this.keys.f = this.keys.r = false;
         this.keys.up = this.keys.w = this.keys.space = false;
+        this.keys.p2dig = this.keys.p2rub = false;
         this.player.isTyping = true;
         this.player.typeFrame = (this.player.typeFrame || 0) + 0.35;
+        for (let i = 1; i < this.players.length; i++) this.players[i].isTyping = false;
         this.computerGrow = Math.min(1, this.computerGrow + 0.08);
       } else {
-        this.player.isTyping = false;
+        for (const p of this.players) p.isTyping = false;
         this.computerGrow = Math.max(0, this.computerGrow - 0.1);
       }
 
-      this.player.update(this.keys, this.terrain, this.platforms, this.portals, this.chests, this.caves, this.time);
-      if (this.keys.f) this.digAt();
-      this.updateRubbing();
-      this.updateSurvival();
+      for (let i = 0; i < this.players.length; i++) {
+        const pl = this.players[i];
+        const pk = this.playerKeys(i);
+        pl.update(pk, this.terrain, this.platforms, this.portals, this.chests, this.caves, this.time);
+        const digging = this.twoPlayer ? (i === 0 ? this.keys.f : this.keys.p2dig) : this.keys.f;
+        if (digging) this.digAt(pl, pk);
+        this.updateRubbing(pl, pk);
+      }
 
-      const camMinY = CFG.HEAVEN_ENABLED ? -CFG.HEAVEN_ALTITUDE * 0.3 : 0;
-      const tCX = this.player.x + this.player.w / 2 - this.canvas.width * 0.35;
-      const tCY = this.player.y + this.player.h / 2 - this.canvas.height * 0.5;
+      this.heat = 0;
+      this.inHeaven = false;
+      for (let i = 0; i < this.players.length; i++) {
+        this.updateSurvival(this.players[i], this.playerKeys(i));
+      }
+
+      for (const b of this.buckets) {
+        b.bob += 0.05;
+        for (const pl of this.players) {
+          const cxp = pl.x + pl.w / 2;
+          const dx = cxp - b.x, dy = (pl.y + pl.h / 2) - b.y;
+          if (dx * dx + dy * dy < 26 * 26 && pl.water < pl.maxWater) {
+            pl.water = pl.maxWater;
+            this.showInteraction('💧 Refilled!', '#45b7d1');
+            break;
+          }
+        }
+      }
+
+      for (const c of this.caveChests) {
+        c.pulse += 0.04;
+        if (!c.open) {
+          for (const pl of this.players) {
+            const cxp = pl.x + pl.w / 2;
+            const dx = cxp - c.x, dy = (pl.y + pl.h / 2) - c.y;
+            if (dx * dx + dy * dy < 30 * 30) {
+              c.open = true;
+              this.showInteraction('📦 ' + c.loot, '#ffd479');
+              break;
+            }
+          }
+        }
+      }
+
+      if (this.twoPlayer) {
+        this.keys.jumpPressedP1 = false;
+        this.keys.jumpPressedP2 = false;
+      } else {
+        this.keys.jumpPressed = false;
+      }
+
+      const cen = this.playersCenter();
+      const camMinY = heavenCamMinY();
+      const tCX = cen.x - this.canvas.width * 0.35;
+      const tCY = cen.y - this.canvas.height * 0.5;
       this.cameraX += (tCX - this.cameraX) * 0.08;
       this.cameraY += (tCY - this.cameraY) * 0.08;
       this.cameraX = Math.max(0, Math.min(this.cameraX, CFG.WORLD_WIDTH - this.canvas.width));
@@ -1728,17 +1931,20 @@ const InteractiveWorld = (() => {
 
       // Shovel pickups.
       if (this.shovels) {
-        const pcx = this.player.x + this.player.w / 2;
-        const pcy = this.player.y + this.player.h / 2;
         for (const s of this.shovels) {
           s.bob += 0.06;
           if (!s.taken) {
-            const dx = pcx - s.x, dy = pcy - s.y;
-            if (dx * dx + dy * dy < 26 * 26) {
-              s.taken = true;
-              this.player.hasShovel = true;
-              this.player.shovelDurability = this.player.maxShovelDurability;
-              this.showInteraction('🪏 Shovel! Press F to dig', '#ffd479');
+            for (const pl of this.players) {
+              const pcx = pl.x + pl.w / 2;
+              const pcy = pl.y + pl.h / 2;
+              const dx = pcx - s.x, dy = pcy - s.y;
+              if (dx * dx + dy * dy < 26 * 26) {
+                s.taken = true;
+                pl.hasShovel = true;
+                pl.shovelDurability = pl.maxShovelDurability;
+                this.showInteraction('🪏 Shovel! Press F to dig', '#ffd479');
+                break;
+              }
             }
           }
         }
@@ -1746,16 +1952,19 @@ const InteractiveWorld = (() => {
 
       // Stick pickups.
       if (this.stickPickups) {
-        const pcx = this.player.x + this.player.w / 2;
-        const pcy = this.player.y + this.player.h / 2;
         for (const s of this.stickPickups) {
           s.bob += 0.05;
           if (!s.taken) {
-            const dx = pcx - s.x, dy = pcy - s.y;
-            if (dx * dx + dy * dy < 22 * 22) {
-              s.taken = true;
-              this.player.sticks++;
-              this.showInteraction('🪵 Stick (' + this.player.sticks + ')', '#c49040');
+            for (const pl of this.players) {
+              const pcx = pl.x + pl.w / 2;
+              const pcy = pl.y + pl.h / 2;
+              const dx = pcx - s.x, dy = pcy - s.y;
+              if (dx * dx + dy * dy < 22 * 22) {
+                s.taken = true;
+                pl.sticks++;
+                this.showInteraction('🪵 Stick (' + pl.sticks + ')', '#c49040');
+                break;
+              }
             }
           }
         }
@@ -1770,10 +1979,10 @@ const InteractiveWorld = (() => {
       if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
       const daylight = Math.max(0, 1 - Math.abs(this.timeOfDay - 0.5) * 2.5);
       const creatureCtx = {
-        player: { x: this.player.x + this.player.w / 2, y: this.player.y + this.player.h / 2 },
+        player: cen,
         neighbors: this.creatures,
         daylight,
-        lights: daylight < 0.4 ? [{ x: this.player.x + this.player.w / 2, y: this.player.y }] : []
+        lights: daylight < 0.4 ? this.players.map(pl => ({ x: pl.x + pl.w / 2, y: pl.y })) : []
       };
       for (const c of this.creatures) c.update(creatureCtx);
       for (const s of this.stars) s.tw += s.sp;
@@ -1808,9 +2017,12 @@ const InteractiveWorld = (() => {
       this.drawFires(ctx, cx, cy, W, H);
       this.drawPortals(ctx, cx, cy, W, H);
       this.drawCreatures(ctx, cx, cy, W, H);
-      this.player.draw(ctx, cx, cy, this._playerColor);
-      this.drawDigTarget(ctx, cx, cy);
-      this.drawRubProgress(ctx, cx, cy);
+      for (let i = 0; i < this.players.length; i++) {
+        const color = this._playerColors[i] || this._playerColor;
+        this.players[i].draw(ctx, cx, cy, color);
+        this.drawDigTarget(ctx, cx, cy, this.players[i]);
+        this.drawRubProgress(ctx, cx, cy, this.players[i]);
+      }
       if (this.computerGrow > 0.01) this.drawComputer(ctx, cx, cy);
       this.drawParticles(ctx, cx, cy, W, H);
       this.drawWeather(ctx, cx, cy, W, H);
@@ -1820,92 +2032,116 @@ const InteractiveWorld = (() => {
         ctx.fillRect(0, 0, W, H);
       }
       // Cold haze in heaven when freezing.
-      if (this.inHeaven && this.player.freeze > 30) {
-        ctx.fillStyle = `rgba(160,220,255,${(this.player.freeze / 100) * 0.2})`;
-        ctx.fillRect(0, 0, W, H);
+      if (this.inHeaven) {
+        let maxFreeze = 0;
+        for (const pl of this.players) maxFreeze = Math.max(maxFreeze, pl.freeze);
+        if (maxFreeze > 30) {
+          ctx.fillStyle = `rgba(160,220,255,${(maxFreeze / 100) * 0.2})`;
+          ctx.fillRect(0, 0, W, H);
+        }
       }
-      if (this.player.deathFlash > 0) {
-        ctx.fillStyle = `rgba(255,0,0,${this.player.deathFlash / 60})`;
-        ctx.fillRect(0, 0, W, H);
+      for (const pl of this.players) {
+        if (pl.deathFlash > 0) {
+          ctx.fillStyle = `rgba(255,0,0,${pl.deathFlash / 60})`;
+          ctx.fillRect(0, 0, W, H);
+        }
       }
       this.drawSurvivalHud(ctx, W);
       this.drawHUD(ctx, W, H);
       this.drawInteractions(ctx, W, H);
-      if (this.player.hasShovel) this.drawShovelHud(ctx, W, H);
+      for (let i = 0; i < this.players.length; i++) {
+        if (this.players[i].hasShovel) this.drawShovelHud(ctx, W, H, this.players[i], i);
+      }
       if (this.showMinimap) this.drawMinimap(ctx, W, H);
     }
 
     // Water meter (drains as you sweat) or freeze bar in heaven.
     drawSurvivalHud(ctx, W) {
-      const p = this.player;
-      const x = 14, y = 14, bw = 150, bh = 14;
+      const x = 14, bw = 150, bh = 14;
+      let y = 14;
       ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
-      if (this.inHeaven) {
-        const frac = p.freeze / p.maxFreeze;
-        const cold = frac > 0.7;
-        ctx.fillStyle = cold ? '#4a9eff' : '#a8d8ff';
-        ctx.fillRect(x, y, bw * frac, bh);
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.font = '11px system-ui, sans-serif';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('❄️ ' + Math.ceil(p.freeze), x + 6, y + bh / 2 + 1);
-        if (p.sticks >= 2) {
-          ctx.fillStyle = '#c49040';
-          ctx.fillText('R: rub sticks', x + bw + 12, y + bh / 2 + 1);
+      for (let i = 0; i < this.players.length; i++) {
+        const p = this.players[i];
+        const color = this._playerColors[i] || '#4ecdc4';
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
+        if (this.inHeaven) {
+          const frac = p.freeze / p.maxFreeze;
+          const cold = frac > 0.7;
+          ctx.fillStyle = cold ? '#4a9eff' : '#a8d8ff';
+          ctx.fillRect(x, y, bw * frac, bh);
+          ctx.fillStyle = 'rgba(255,255,255,0.85)';
+          ctx.font = '11px system-ui, sans-serif';
+          ctx.textBaseline = 'middle';
+          const rubHint = this.twoPlayer ? (i === 0 ? 'R' : ',') : 'R';
+          ctx.fillText('❄️ ' + Math.ceil(p.freeze), x + 6, y + bh / 2 + 1);
+          if (p.sticks >= 2) {
+            ctx.fillStyle = color;
+            ctx.fillText(rubHint + ': rub', x + bw + 12, y + bh / 2 + 1);
+          }
+        } else {
+          const frac = p.water / p.maxWater;
+          const low = frac < 0.3;
+          ctx.fillStyle = low ? '#ff5a4a' : '#45b7d1';
+          ctx.fillRect(x, y, bw * frac, bh);
+          ctx.fillStyle = 'rgba(255,255,255,0.85)';
+          ctx.font = '11px system-ui, sans-serif';
+          ctx.textBaseline = 'middle';
+          const label = this.twoPlayer ? (i === 0 ? 'P1 ' : 'P2 ') : '';
+          ctx.fillText(label + '💧 ' + Math.ceil(p.water), x + 6, y + bh / 2 + 1);
+          if (i === 0 && this.heat > 0.55) {
+            ctx.fillStyle = '#ff8b3a';
+            ctx.fillText('🔥 HOT', x + bw + 12, y + bh / 2 + 1);
+          }
+          if (p.sticks >= 2) {
+            ctx.fillStyle = '#c49040';
+            ctx.fillText('🪵×' + p.sticks, x + bw + 12, y + bh / 2 + 1);
+          }
         }
-      } else {
-        const frac = p.water / p.maxWater;
-        const low = frac < 0.3;
-        ctx.fillStyle = low ? '#ff5a4a' : '#45b7d1';
-        ctx.fillRect(x, y, bw * frac, bh);
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.font = '11px system-ui, sans-serif';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('💧 ' + Math.ceil(p.water), x + 6, y + bh / 2 + 1);
-        if (this.heat > 0.55) {
-          ctx.fillStyle = '#ff8b3a';
-          ctx.fillText('🔥 HOT', x + bw + 12, y + bh / 2 + 1);
+        if (this.twoPlayer) {
+          ctx.fillStyle = color;
+          ctx.font = '9px system-ui, sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillText(i === 0 ? 'P1' : 'P2', x + bw - 4, y - 5);
+          ctx.textAlign = 'left';
         }
-        if (p.sticks >= 2) {
-          ctx.fillStyle = '#c49040';
-          ctx.fillText('🪵×' + p.sticks, x + bw + 12, y + bh / 2 + 1);
-        }
+        y += bh + 10;
       }
       ctx.restore();
-      this._hudStackY = y + bh + 10;
+      this._hudStackY = y;
     }
 
-    drawShovelHud(ctx, W, H) {
-      const p = this.player;
-      const bottomPad = 52;
+    drawShovelHud(ctx, W, H, p, playerIndex) {
+      const bottomPad = 52 + (this.players.length - 1 - playerIndex) * 48;
+      const digLabel = this.twoPlayer
+        ? (playerIndex === 0 ? '🪏 F: dig · S+F: down' : '🪏 .: dig · ↓+.: down')
+        : '🪏 F: dig · S+F: down';
       ctx.save();
       ctx.font = '12px system-ui, sans-serif';
       ctx.textBaseline = 'middle';
-      const label = '🪏 F: dig · S+F: down';
-      const tw = ctx.measureText(label).width + 18;
+      const tw = ctx.measureText(digLabel).width + 18;
+      const bx = playerIndex === 1 && this.twoPlayer ? W - tw - 12 : 12;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(12, H - bottomPad, tw, 22);
+      ctx.fillRect(bx, H - bottomPad, tw, 22);
       ctx.fillStyle = '#ffd479';
-      ctx.fillText(label, 21, H - bottomPad + 11);
+      ctx.fillText(digLabel, bx + 9, H - bottomPad + 11);
 
       // Shovel durability bar.
-      const bx = 12, by = H - bottomPad - 18, bw = 110, bh = 8;
+      const barX = bx, by = H - bottomPad - 18, bw = 110, bh = 8;
       const frac = Math.max(0, p.shovelDurability / p.maxShovelDurability);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+      ctx.fillRect(barX - 2, by - 2, bw + 4, bh + 4);
       ctx.fillStyle = frac < 0.25 ? '#ff5a4a' : '#caa055';
-      ctx.fillRect(bx, by, bw * frac, bh);
+      ctx.fillRect(barX, by, bw * frac, bh);
       ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.font = '9px system-ui, sans-serif';
-      ctx.fillText('shovel', bx + bw + 6, by + bh / 2);
+      ctx.fillText('shovel', barX + bw + 6, by + bh / 2);
       ctx.restore();
     }
 
     // Show what's being chipped and how far through it the player is.
-    drawDigTarget(ctx, cx, cy) {
-      const t = this._digTarget;
+    drawDigTarget(ctx, cx, cy, player) {
+      const t = player._digTarget;
       if (!t) return;
       const gx = t.x - cx, gy = t.y - cy;
       const frac = Math.min(1, t.hits / t.need);
@@ -2440,12 +2676,11 @@ const InteractiveWorld = (() => {
       }
     }
 
-    drawRubProgress(ctx, cx, cy) {
-      if (!this._rubProgress || this._rubProgress <= 0) return;
-      const p = this.player;
-      const gx = p.x + p.w / 2 - cx;
-      const gy = p.y - 18 - cy;
-      const frac = Math.min(1, this._rubProgress / CFG.RUB_FRAMES);
+    drawRubProgress(ctx, cx, cy, player) {
+      if (!player._rubProgress || player._rubProgress <= 0) return;
+      const gx = player.x + player.w / 2 - cx;
+      const gy = player.y - 18 - cy;
+      const frac = Math.min(1, player._rubProgress / CFG.RUB_FRAMES);
       ctx.save();
       ctx.strokeStyle = 'rgba(200,160,80,0.5)';
       ctx.lineWidth = 3;
@@ -2695,14 +2930,20 @@ const InteractiveWorld = (() => {
 
       let hudY = this._hudStackY || 14;
       const weatherIcon = this.weatherState === 'rain' ? '🌧' : this.weatherState === 'snow' ? '❄' : '☀';
-      ctx.fillText(`${weatherIcon} WASD:Move Space:Jump E:Interact M:Map`, 14, hudY);
+      const moveHint = this.twoPlayer
+        ? 'P1: WASD+Space P2: Arrows'
+        : 'WASD:Move Space:Jump';
+      ctx.fillText(`${weatherIcon} ${moveHint} E:Interact M:Map`, 14, hudY);
       hudY += 18;
 
       let nearPortal = null;
-      for (const p of this.portals) {
-        const dx = (this.player.x + this.player.w / 2) - p.x;
-        const dy = (this.player.y + this.player.h / 2) - p.y;
-        if (Math.sqrt(dx * dx + dy * dy) < p.radius + 50) { nearPortal = p; break; }
+      for (const portal of this.portals) {
+        for (const pl of this.players) {
+          const dx = (pl.x + pl.w / 2) - portal.x;
+          const dy = (pl.y + pl.h / 2) - portal.y;
+          if (Math.sqrt(dx * dx + dy * dy) < portal.radius + 50) { nearPortal = portal; break; }
+        }
+        if (nearPortal) break;
       }
       if (nearPortal) {
         ctx.fillStyle = nearPortal.color;
@@ -2713,9 +2954,12 @@ const InteractiveWorld = (() => {
 
       let nearChest = null;
       for (const c of this.chests) {
-        const dx = (this.player.x + this.player.w / 2) - c.x;
-        const dy = (this.player.y + this.player.h / 2) - c.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 30) { nearChest = c; break; }
+        for (const pl of this.players) {
+          const dx = (pl.x + pl.w / 2) - c.x;
+          const dy = (pl.y + pl.h / 2) - c.y;
+          if (Math.sqrt(dx * dx + dy * dy) < 30) { nearChest = c; break; }
+        }
+        if (nearChest) break;
       }
       if (nearChest) {
         ctx.fillStyle = '#c49040';
@@ -2724,12 +2968,16 @@ const InteractiveWorld = (() => {
         hudY += 18;
       }
 
-      const biome = this._biomePalette || getBiome(this.player.x + this.player.w / 2);
+      const cen = this.playersCenter();
+      const biome = this._biomePalette || getBiome(cen.x);
       const biomeName = biome.name || 'custom';
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.font = '10px monospace';
       ctx.textAlign = 'right';
-      ctx.fillText(`${biomeName} | x:${Math.floor(this.player.x)}`, W - 14, 14);
+      const posLabel = this.twoPlayer
+        ? `x:${Math.floor(this.players[0].x)}/${Math.floor(this.players[1].x)}`
+        : `x:${Math.floor(this.players[0].x)}`;
+      ctx.fillText(`${biomeName} | ${posLabel}`, W - 14, 14);
 
       ctx.textAlign = 'left';
       const dayPhase = this.timeOfDay < 0.25 ? 'Night' : this.timeOfDay < 0.45 ? 'Dawn' : this.timeOfDay < 0.7 ? 'Day' : this.timeOfDay < 0.85 ? 'Dusk' : 'Night';
@@ -2788,14 +3036,17 @@ const InteractiveWorld = (() => {
         ctx.fillRect(mx + p.x * scaleX, my + p.y * scaleY, Math.max(2, p.w * scaleX), Math.max(1, p.h * scaleY));
       }
 
-      const px = mx + (this.player.x + this.player.w / 2) * scaleX;
-      const py = my + (this.player.y + this.player.h / 2) * scaleY;
-      ctx.fillStyle = '#4ecdc4';
-      ctx.shadowColor = '#4ecdc4';
-      ctx.shadowBlur = 4;
-      ctx.beginPath();
-      ctx.arc(px, py, 3, 0, Math.PI * 2);
-      ctx.fill();
+      for (let i = 0; i < this.players.length; i++) {
+        const pl = this.players[i];
+        const px = mx + (pl.x + pl.w / 2) * scaleX;
+        const py = my + (pl.y + pl.h / 2) * scaleY;
+        ctx.fillStyle = this._playerColors[i] || '#4ecdc4';
+        ctx.shadowColor = this._playerColors[i] || '#4ecdc4';
+        ctx.shadowBlur = 4;
+        ctx.beginPath();
+        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.shadowBlur = 0;
 
       ctx.restore();

@@ -63,7 +63,7 @@ The engine lives in `../src/interactive-background/world-engine.js`. Cavesweat l
 ## Controls
 
 - **WASD / Arrows** — move
-- **Space** — jump (double jump in air; wall jump when grabbing a cave wall)
+- **Space** — jump (double jump in air; **↑** or **W** also jump)
 - **E** — interact with portals / chests
 - **F** — dig (pick up a shovel first)
 - **R** — hold to rub sticks together (need 2 sticks; 10 seconds starts a fire)

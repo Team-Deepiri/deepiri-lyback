@@ -90,6 +90,11 @@
       color: #fff;
     }
     .settings-actions .reset-btn:hover { opacity: 0.92; }
+    .settings-actions .players-btn {
+      background: linear-gradient(135deg, #4ecdc4, #45b7d1);
+      color: #07070d;
+    }
+    .settings-actions .players-btn:hover { opacity: 0.92; }
     .settings-actions .close-btn {
       background: transparent;
       border: 1px solid rgba(255,255,255,0.15);
@@ -102,7 +107,7 @@
   </style>
 </head>
 <body>
-  <canvas id="game"></canvas>
+  <canvas id="game" tabindex="0"></canvas>
   <div id="title"></div>
   <div id="overlay">
     <div class="card">
@@ -118,35 +123,75 @@
       <h2 id="settingsTitle">Settings</h2>
       <p class="sub">In-game options for this Cavesweat session.</p>
       <div class="settings-actions">
+        <button id="playersToggleBtn" class="players-btn" type="button">👥 Add 2nd player</button>
         <button id="resetBtn" class="reset-btn" type="button">↻ Reset world</button>
         <button id="closeSettingsBtn" class="close-btn" type="button">Close</button>
       </div>
     </div>
   </div>
-  <div id="hud">
-    WASD / Arrows: Move &nbsp;|&nbsp; Space: Jump &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; M: Minimap &nbsp;|&nbsp; Esc: Settings
-  </div>
+  <div id="hud"></div>
 
   <script src="config.js"></script>
   <script>
+    const TWO_PLAYER_KEY = 'cavesweat-two-player';
     const overlay = document.getElementById('overlay');
     const errEl = document.getElementById('err');
     const descEl = document.getElementById('desc');
     const playBtn = document.getElementById('playBtn');
     const titleEl = document.getElementById('title');
+    const hudEl = document.getElementById('hud');
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsPanel = document.getElementById('settingsPanel');
+    const playersToggleBtn = document.getElementById('playersToggleBtn');
     const resetBtn = document.getElementById('resetBtn');
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     let engine = null;
     let pendingRuntime = null;
+    let twoPlayerMode = localStorage.getItem(TWO_PLAYER_KEY) === '1';
+
+    function updateHudText() {
+      if (twoPlayerMode) {
+        hudEl.innerHTML = 'P1: WASD + Space (jump) &nbsp;|&nbsp; P2: Arrows (↑ jump) &nbsp;|&nbsp; F / . : Dig &nbsp;|&nbsp; R / , : Rub sticks &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; Esc: Settings';
+      } else {
+        hudEl.innerHTML = 'WASD / Arrows: Move &nbsp;|&nbsp; Space / W / ↑: Jump &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; R: Rub sticks &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; Esc: Settings';
+      }
+    }
+
+    function updatePlayersButton() {
+      playersToggleBtn.textContent = twoPlayerMode
+        ? '👤 Switch to 1 player'
+        : '👥 Add 2nd player';
+    }
+
+    function setTwoPlayerMode(on) {
+      twoPlayerMode = !!on;
+      localStorage.setItem(TWO_PLAYER_KEY, twoPlayerMode ? '1' : '0');
+      updatePlayersButton();
+      updateHudText();
+    }
+
+    updateHudText();
+    updatePlayersButton();
+
+    function handleEscape() {
+      if (settingsPanel.classList.contains('open')) {
+        closeSettings();
+        return;
+      }
+      if (!engine || !settingsBtn.classList.contains('visible')) return;
+      openSettings();
+    }
 
     function openSettings() {
       if (engine && engine.isRunning) {
         engine.stop();
         engine._settingsPaused = true;
       }
+      if (engine && engine.keys) {
+        for (const k of Object.keys(engine.keys)) engine.keys[k] = false;
+      }
       settingsPanel.classList.add('open');
+      closeSettingsBtn.focus();
     }
 
     function closeSettings() {
@@ -157,10 +202,23 @@
       }
     }
 
-    function resetGame() {
+    function restartGame() {
       if (!pendingRuntime) return;
-      closeSettings();
+      settingsPanel.classList.remove('open');
+      if (engine) {
+        engine._settingsPaused = false;
+        engine.stop();
+      }
       startGame(pendingRuntime);
+    }
+
+    function resetGame() {
+      restartGame();
+    }
+
+    function togglePlayers() {
+      setTwoPlayerMode(!twoPlayerMode);
+      restartGame();
     }
 
     async function loadWorldConfig() {
@@ -187,9 +245,14 @@
       loadEngineScript().then(() => {
         if (engine && engine.stop) engine.stop();
         const canvas = document.getElementById('game');
-        engine = new window.InteractiveWorld.WorldEngine(canvas, { interactive: true });
+        engine = new window.InteractiveWorld.WorldEngine(canvas, {
+          interactive: true,
+          twoPlayer: twoPlayerMode,
+          onEscape: handleEscape
+        });
         if (engine.applyWorldConfig) engine.applyWorldConfig(runtime.apply);
         engine.start();
+        canvas.focus();
         titleEl.textContent = runtime.meta.name;
         overlay.classList.add('hide');
         settingsBtn.classList.add('visible');
@@ -223,23 +286,11 @@
     });
 
     settingsBtn.addEventListener('click', openSettings);
+    playersToggleBtn.addEventListener('click', togglePlayers);
     closeSettingsBtn.addEventListener('click', closeSettings);
     resetBtn.addEventListener('click', resetGame);
     settingsPanel.addEventListener('click', (e) => {
       if (e.target === settingsPanel) closeSettings();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      if (settingsPanel.classList.contains('open')) {
-        closeSettings();
-        return;
-      }
-      // Terminal mode: world-engine handles Escape to leave the computer.
-      if (engine && engine.computerMode) return;
-      if (engine && settingsBtn.classList.contains('visible')) {
-        e.preventDefault();
-        openSettings();
-      }
     });
 
     boot();

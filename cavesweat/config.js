@@ -38,8 +38,9 @@ const DEFAULT_WORLD = {
   heaven: {
     enabled: true,
     altitude: 280,
-    ascentPlatforms: 28,
-    cloudPlatforms: 14,
+    skyHeight: 400,
+    ascentPlatforms: 55,
+    cloudPlatforms: 24,
     trees: 10,
     freezeRate: 0.12
   },
@@ -100,6 +101,7 @@ function configToDefaults(config = {}) {
     WORLD_HEAVEN_CLOUD_PLATFORMS: h.cloudPlatforms,
     WORLD_HEAVEN_TREES: h.trees,
     WORLD_HEAVEN_FREEZE_RATE: h.freezeRate,
+    WORLD_HEAVEN_SKY_HEIGHT: h.skyHeight,
     WORLD_SURVIVAL_RUN_SWEAT_MULT: s.runSweatMult,
     WORLD_SURVIVAL_SURFACE_IDLE_SWEAT: s.surfaceIdleSweat,
     WORLD_SURVIVAL_IDLE_DEEP_MULT: s.idleDeepMult,
@@ -181,17 +183,20 @@ function validateConfig(config) {
   if (h.altitude != null && (h.altitude < 80 || h.altitude > 600)) {
     errors.push('heaven.altitude must be between 80 and 600');
   }
-  if (h.ascentPlatforms != null && (h.ascentPlatforms < 0 || h.ascentPlatforms > 60)) {
-    errors.push('heaven.ascentPlatforms must be between 0 and 60');
+  if (h.ascentPlatforms != null && (h.ascentPlatforms < 0 || h.ascentPlatforms > 120)) {
+    errors.push('heaven.ascentPlatforms must be between 0 and 120');
   }
-  if (h.cloudPlatforms != null && (h.cloudPlatforms < 0 || h.cloudPlatforms > 40)) {
-    errors.push('heaven.cloudPlatforms must be between 0 and 40');
+  if (h.cloudPlatforms != null && (h.cloudPlatforms < 0 || h.cloudPlatforms > 60)) {
+    errors.push('heaven.cloudPlatforms must be between 0 and 60');
   }
   if (h.trees != null && (h.trees < 0 || h.trees > 40)) {
     errors.push('heaven.trees must be between 0 and 40');
   }
   if (h.freezeRate != null && (h.freezeRate < 0.01 || h.freezeRate > 1)) {
     errors.push('heaven.freezeRate must be between 0.01 and 1');
+  }
+  if (h.skyHeight != null && (h.skyHeight < 120 || h.skyHeight > 800)) {
+    errors.push('heaven.skyHeight must be between 120 and 800');
   }
   if (s.runSweatMult != null && (s.runSweatMult < 0.5 || s.runSweatMult > 5)) {
     errors.push('survival.runSweatMult must be between 0.5 and 5');
