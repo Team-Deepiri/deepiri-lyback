@@ -317,7 +317,7 @@ const InteractiveWorld = (() => {
   // Solid heaven map content — paths, props, loot (clouds are ascent-only).
   function generateHeavenRealmContent(heavenHeights, spreader) {
     const empty = { platforms: [], props: [], chests: [], crystals: [] };
-    if (!CFG.HEAVEN_ENABLED || !heavenHeights) return empty;
+    if (!heavenHeights) return empty;
 
     const platforms = [];
     const props = [];

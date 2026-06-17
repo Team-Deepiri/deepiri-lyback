@@ -76,7 +76,7 @@ describe('cave system', () => {
     const c = caves.chambers[0];
     expect(caveCarved(caves, c.x, c.y)).toBe(true);
     // far from any cave is solid rock, not carved
-    expect(caveCarved(caves, c.x + 5000, c.y)).toBe(false);
+    expect(caveCarved(caves, (c.x + 2500) % 4990 + 5, c.y + 900)).toBe(false);
   });
 
   it('keeps entrance shafts level with the surface', () => {
