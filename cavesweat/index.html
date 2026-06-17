@@ -153,9 +153,9 @@
     function updateHudText() {
       const hints = {
         1: 'WASD / Arrows: Move &nbsp;|&nbsp; Space / W / ↑: Jump &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; R: Rub &nbsp;|&nbsp; Esc or ⚙: Settings',
-        2: 'P1: WASD+Space &nbsp;|&nbsp; P2: Arrows+RCtrl (.) dig (,) rub &nbsp;|&nbsp; Esc or ⚙: Settings',
-        3: 'P1: WASD+Space &nbsp;|&nbsp; P2: Arrows+RCtrl &nbsp;|&nbsp; P3: IJKL+= (] dig) &nbsp;|&nbsp; Esc or ⚙: Settings',
-        4: 'P1: WASD+Space &nbsp;|&nbsp; P2: Arrows+RCtrl &nbsp;|&nbsp; P3: IJKL+= &nbsp;|&nbsp; P4: Num8426+0 (Num1 dig) &nbsp;|&nbsp; Esc or ⚙: Settings'
+        2: 'P1: WASD+Space/W &nbsp;|&nbsp; P2: Arrows+RCtrl (↑ jump) &nbsp;|&nbsp; Esc or ⚙: Settings',
+        3: 'P1: WASD+Space/W &nbsp;|&nbsp; P2: Arrows (↑ jump) &nbsp;|&nbsp; P3: IJKL (I jump) &nbsp;|&nbsp; Esc or ⚙: Settings',
+        4: 'P1: WASD+Space/W &nbsp;|&nbsp; P2: Arrows (↑ jump) &nbsp;|&nbsp; P3: IJKL &nbsp;|&nbsp; P4: Num8426 (8 jump) &nbsp;|&nbsp; Esc or ⚙: Settings'
       };
       hudEl.innerHTML = hints[playerCount] || hints[1];
     }

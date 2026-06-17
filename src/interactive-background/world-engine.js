@@ -1525,30 +1525,31 @@ const InteractiveWorld = (() => {
       switch (index) {
         case 0:
           return {
-            left: k.a, right: k.d, down: k.s,
-            a: k.a, d: k.d, s: k.s,
-            jump: k.space,
+            left: k.a, right: k.d, down: k.s, up: k.w,
+            a: k.a, d: k.d, s: k.s, w: k.w,
+            jump: k.space || k.w,
             jumpPressed: k.jumpPressed0,
             r: k.r
           };
         case 1:
           return {
-            left: k.left, right: k.right, down: k.down,
-            jump: k.ctrlRight,
+            left: k.left, right: k.right, down: k.down, up: k.up,
+            jump: k.up || k.ctrlRight,
             jumpPressed: k.jumpPressed1,
             r: k.p2rub
           };
         case 2:
           return {
-            left: k.j, right: k.l, down: k.k,
-            jump: k.equal,
+            left: k.j, right: k.l, down: k.k, up: k.i,
+            i: k.i, j: k.j, k: k.k, l: k.l,
+            jump: k.i || k.equal,
             jumpPressed: k.jumpPressed2,
             r: k.p3rub
           };
         case 3:
           return {
-            left: k.np4, right: k.np6, down: k.np2,
-            jump: k.np0,
+            left: k.np4, right: k.np6, down: k.np2, up: k.np8,
+            jump: k.np8 || k.np0,
             jumpPressed: k.jumpPressed3,
             r: k.p4rub
           };
@@ -1572,9 +1573,14 @@ const InteractiveWorld = (() => {
 
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
 
-      // P1 — WASD + Space
-      if (key === 'a' || key === 'd' || key === 's' || key === 'w') {
+      // P1 — WASD + Space (+ W jumps)
+      if (key === 'a' || key === 'd' || key === 's') {
         this._setMultiKey(key, down);
+        return;
+      }
+      if (key === 'w') {
+        this._setMultiKey('w', down);
+        if (down) this.keys.jumpPressed0 = true;
         return;
       }
       if (key === ' ' || code === 'Space') {
@@ -1585,9 +1591,10 @@ const InteractiveWorld = (() => {
       if (key === 'f') { if (down) e.preventDefault(); this._setMultiKey('f', down); return; }
       if (key === 'r') { if (down) e.preventDefault(); this._setMultiKey('r', down); return; }
 
-      // P2 — Arrows + Right Ctrl
+      // P2 — Arrows (↑ jumps) + Right Ctrl
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
         this._setMultiKey(key.replace('arrow', ''), down);
+        if (down && key === 'arrowup') this.keys.jumpPressed1 = true;
         return;
       }
       if (code === 'ControlRight') {
@@ -1598,9 +1605,14 @@ const InteractiveWorld = (() => {
       if (key === '.') { if (down) e.preventDefault(); this._setMultiKey('p2dig', down); return; }
       if (key === ',') { if (down) e.preventDefault(); this._setMultiKey('p2rub', down); return; }
 
-      // P3 — IJKL + =
-      if (key === 'i' || key === 'j' || key === 'k' || key === 'l') {
+      // P3 — IJKL (↑/I jumps) + =
+      if (key === 'j' || key === 'k' || key === 'l') {
         this._setMultiKey(key, down);
+        return;
+      }
+      if (key === 'i') {
+        this._setMultiKey('i', down);
+        if (down) this.keys.jumpPressed2 = true;
         return;
       }
       if (key === '=' || key === '+') {
@@ -1611,8 +1623,12 @@ const InteractiveWorld = (() => {
       if (key === ']') { if (down) e.preventDefault(); this._setMultiKey('p3dig', down); return; }
       if (key === '[') { if (down) e.preventDefault(); this._setMultiKey('p3rub', down); return; }
 
-      // P4 — Numpad 8426 + 0
-      if (code === 'Numpad8') { this._setMultiKey('np8', down); return; }
+      // P4 — Numpad 8426 (↑/8 jumps) + 0
+      if (code === 'Numpad8') {
+        this._setMultiKey('np8', down);
+        if (down) this.keys.jumpPressed3 = true;
+        return;
+      }
       if (code === 'Numpad4') { this._setMultiKey('np4', down); return; }
       if (code === 'Numpad2') { this._setMultiKey('np2', down); return; }
       if (code === 'Numpad6') { this._setMultiKey('np6', down); return; }
@@ -3056,9 +3072,9 @@ const InteractiveWorld = (() => {
       const weatherIcon = this.weatherState === 'rain' ? '🌧' : this.weatherState === 'snow' ? '❄' : '☀';
       const moveHints = {
         1: 'WASD:Move Space:Jump',
-        2: 'P1: WASD+Space · P2: Arrows+RCtrl',
-        3: 'P1: WASD+Space · P2: Arrows+RCtrl · P3: IJKL+=',
-        4: 'P1: WASD+Space · P2: Arrows+RCtrl · P3: IJKL+= · P4: Num8426+0'
+        2: 'P1: WASD+Space/W · P2: Arrows (↑ jump)+RCtrl',
+        3: 'P1: WASD+Space/W · P2: Arrows (↑ jump) · P3: IJKL (I jump)+=',
+        4: 'P1: WASD+Space/W · P2: Arrows (↑ jump) · P3: IJKL · P4: Num8426 (8 jump)+0'
       };
       const moveHint = moveHints[this.playerCount] || moveHints[1];
       ctx.fillText(`${weatherIcon} ${moveHint} E:Interact M:Map`, 14, hudY);
