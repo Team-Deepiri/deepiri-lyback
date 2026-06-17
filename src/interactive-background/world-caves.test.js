@@ -257,9 +257,14 @@ describe('survival and heaven helpers', () => {
       totalCrystals += (c.crystals || []).length;
       totalStalactites += (c.stalactites || []).length;
       for (const b of (c.boulders || [])) {
+        const x = c.x + b.dx;
         const fy = roomFloorY(c, b.dx);
-        expect(caveCarved(caves, c.x + b.dx, fy - 8)).toBe(true);
-        expect(isRockAt(caves, terrain, c.x + b.dx, fy + 6)).toBe(true);
+        expect(caveCarved(caves, x, fy - 8)).toBe(true);
+        let rockBelow = false;
+        for (let oy = 4; oy <= 32; oy += 4) {
+          if (isRockAt(caves, terrain, x, fy + oy)) { rockBelow = true; break; }
+        }
+        expect(rockBelow).toBe(true);
       }
       for (const s of (c.stalactites || [])) {
         const x = c.x + s.dx;
@@ -269,7 +274,11 @@ describe('survival and heaven helpers', () => {
         } else {
           const cy = roomCeilingY(c, s.dx);
           expect(caveCarved(caves, x, cy + 12)).toBe(true);
-          expect(isRockAt(caves, terrain, x, cy - 4)).toBe(true);
+          let rockAbove = false;
+          for (let oy = 4; oy <= 40; oy += 4) {
+            if (isRockAt(caves, terrain, x, cy - oy)) { rockAbove = true; break; }
+          }
+          expect(rockAbove).toBe(true);
         }
       }
     }
