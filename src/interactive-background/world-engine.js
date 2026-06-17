@@ -117,7 +117,7 @@ const InteractiveWorld = (() => {
   }
 
   function getBiomeAt(x, y, heights, heavenHeights) {
-    if (CFG.HEAVEN_ENABLED && heavenHeights) {
+    if (heavenHeights) {
       const hgY = getHeavenGroundY(heavenHeights, x);
       if (y + CFG.PLAYER_H * 0.5 < hgY + 28) return HEAVEN_BIOME;
     }
@@ -310,6 +310,184 @@ const InteractiveWorld = (() => {
     return trees;
   }
 
+  const MAP_ITEM_TYPES = [
+    { kind: 'coin', emoji: '🪙', color: '#ffd479' },
+    { kind: 'gem', emoji: '💎', color: '#4ecdc4' },
+    { kind: 'mushroom', emoji: '🍄', color: '#ff6b6b' },
+    { kind: 'feather', emoji: '🪶', color: '#dfe6e9' },
+    { kind: 'star', emoji: '⭐', color: '#ffeaa7' },
+    { kind: 'rope', emoji: '🧵', color: '#c49040' },
+    { kind: 'shell', emoji: '🐚', color: '#ffb4a2' },
+    { kind: 'leaf', emoji: '🍃', color: '#96ceb4' }
+  ];
+
+  function pickMapItemType() {
+    return MAP_ITEM_TYPES[Math.floor(Math.random() * MAP_ITEM_TYPES.length)];
+  }
+
+  const PICKUP_SPREAD_MIN = 220;
+  const PICKUP_SPREAD_CELL = 260;
+  const CAVE_PICKUP_SPREAD_MIN = 100;
+
+  function shuffleInPlace(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // Keeps collectible pickups from clustering — grid cap plus minimum separation.
+  function createPickupSpreader(opts = {}) {
+    const minSep = opts.minSep ?? PICKUP_SPREAD_MIN;
+    const cellSize = opts.cellSize ?? PICKUP_SPREAD_CELL;
+    const maxPerCell = opts.maxPerCell ?? 1;
+    const placed = [];
+    const cellCounts = new Map();
+
+    function cellKey(x, y) {
+      return `${Math.floor(x / cellSize)},${Math.floor(y / cellSize)}`;
+    }
+
+    function tooClose(x, y, sep) {
+      const sepSq = sep * sep;
+      for (const p of placed) {
+        const dx = p.x - x, dy = p.y - y;
+        if (dx * dx + dy * dy < sepSq) return true;
+      }
+      return false;
+    }
+
+    return {
+      placed,
+      canPlace(x, y, sep = minSep) {
+        const k = cellKey(x, y);
+        if ((cellCounts.get(k) || 0) >= maxPerCell) return false;
+        return !tooClose(x, y, sep);
+      },
+      mark(x, y) {
+        placed.push({ x, y });
+        const k = cellKey(x, y);
+        cellCounts.set(k, (cellCounts.get(k) || 0) + 1);
+      },
+      tryPlace(getCandidate, attempts = 28, sep = minSep) {
+        for (let t = 0; t < attempts; t++) {
+          const c = getCandidate(t);
+          if (!c) continue;
+          if (this.canPlace(c.x, c.y, sep)) {
+            this.mark(c.x, c.y);
+            return c;
+          }
+        }
+        return null;
+      },
+      bandX(index, count, margin = 140, jitter = 0.55) {
+        const span = CFG.WORLD_WIDTH - margin * 2;
+        const band = span / Math.max(1, count);
+        const base = margin + band * (index + 0.5);
+        return base + (Math.random() - 0.5) * band * jitter;
+      }
+    };
+  }
+
+  function generateMapItems(heights, caves, heavenHeights, spreader) {
+    const items = [];
+    const add = (x, y, sep = CAVE_PICKUP_SPREAD_MIN) => {
+      if (spreader) {
+        if (!spreader.canPlace(x, y, sep)) return;
+        spreader.mark(x, y);
+      }
+      const t = pickMapItemType();
+      items.push({
+        x, y, kind: t.kind, emoji: t.emoji, color: t.color,
+        taken: false, bob: Math.random() * Math.PI * 2
+      });
+    };
+
+    for (let i = 0; i < 28; i++) {
+      const x = spreader
+        ? spreader.bandX(i, 28, 140, 0.65)
+        : 120 + Math.random() * (CFG.WORLD_WIDTH - 240);
+      const surfY = getTerrainY(heights, x);
+      const y = surfY - 10;
+      add(x, y, PICKUP_SPREAD_MIN);
+    }
+
+    const chambers = shuffleInPlace((caves.chambers || []).slice());
+    for (const c of chambers) {
+      if (Math.random() > 0.5) continue;
+      const spot = pickRoomFloorSpot(caves, heights, c, 32, heavenHeights);
+      if (spot) add(spot.x, spot.y - 10);
+    }
+
+    const pockets = shuffleInPlace((caves.pockets || []).slice());
+    for (const p of pockets) {
+      if (Math.random() > 0.55) continue;
+      const spot = pickRoomFloorSpot(caves, heights, p, 32, heavenHeights);
+      if (spot) add(spot.x, spot.y - 10);
+    }
+
+    if (CFG.HEAVEN_ENABLED && heavenHeights) {
+      for (let i = 0; i < 10; i++) {
+        const x = spreader
+          ? spreader.bandX(i, 10, 180, 0.55)
+          : 180 + Math.random() * (CFG.WORLD_WIDTH - 360);
+        add(x, getHeavenGroundY(heavenHeights, x) - 10, PICKUP_SPREAD_MIN);
+      }
+      for (let i = 0; i < 6; i++) {
+        const x = spreader
+          ? spreader.bandX(i, 6, 200, 0.5)
+          : 200 + Math.random() * (CFG.WORLD_WIDTH - 400);
+        const y = skyBaseAt(heights, x) - 80 - Math.random() * (CFG.HEAVEN_SKY_CLIMB * 0.7);
+        add(x, y, PICKUP_SPREAD_MIN);
+      }
+    }
+
+    return items;
+  }
+
+  function generateCheckpoints(heights, caves, heavenHeights) {
+    const cps = [];
+    let id = 0;
+
+    for (const ex of (caves.entrances || [])) {
+      const surf = getTerrainY(heights, ex);
+      cps.push({
+        id: id++, x: ex, y: surf - 10, kind: 'surface',
+        label: 'Camp', emoji: '🏁', activated: false, pulse: Math.random() * 6
+      });
+    }
+
+    for (const c of (caves.chambers || [])) {
+      if (Math.random() > 0.32) continue;
+      const spot = pickRoomFloorSpot(caves, heights, c, 55, heavenHeights);
+      if (!spot) continue;
+      cps.push({
+        id: id++, x: spot.x, y: spot.y - 14, kind: 'cave',
+        label: 'Deep Camp', emoji: '⛏️', activated: false, pulse: Math.random() * 6
+      });
+    }
+
+    if (CFG.HEAVEN_ENABLED && heavenHeights) {
+      const skyXs = [0.22, 0.5, 0.78];
+      for (const frac of skyXs) {
+        const x = CFG.WORLD_WIDTH * frac;
+        const y = skyBaseAt(heights, x) - CFG.HEAVEN_SKY_CLIMB * (0.35 + frac * 0.2);
+        cps.push({
+          id: id++, x, y, kind: 'sky',
+          label: 'Cloud Rest', emoji: '☁️', activated: false, pulse: Math.random() * 6
+        });
+      }
+      const hx = CFG.WORLD_WIDTH * 0.42;
+      cps.push({
+        id: id++, x: hx, y: getHeavenGroundY(heavenHeights, hx) - 16, kind: 'heaven',
+        label: 'Heaven Gate', emoji: '✨', activated: false, pulse: Math.random() * 6
+      });
+    }
+
+    return cps;
+  }
+
   function generatePortals(heights) {
     const labels = ['Apps', 'Music', 'Files', 'Settings', 'Terminal', 'Clock'];
     const portalColors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'];
@@ -331,14 +509,20 @@ const InteractiveWorld = (() => {
     return portals;
   }
 
-  function generateChests(heights) {
+  function generateChests(heights, spreader) {
     const chests = [];
-    for (let i = 0; i < CFG.CHEST_COUNT; i++) {
-      const x = 200 + Math.random() * (CFG.WORLD_WIDTH - 400);
-      const ty = getTerrainY(heights, x);
-      const biome = getBiome(x);
+    const n = CFG.CHEST_COUNT;
+    for (let i = 0; i < n; i++) {
+      const spot = spreader
+        ? spreader.tryPlace(() => {
+            const x = spreader.bandX(i, n, 200, 0.5);
+            return { x, y: getTerrainY(heights, x) - 18 };
+          }, 32, PICKUP_SPREAD_MIN)
+        : { x: 200 + Math.random() * (CFG.WORLD_WIDTH - 400), y: getTerrainY(heights, 200) - 18 };
+      if (!spot) continue;
+      const biome = getBiome(spot.x);
       chests.push({
-        x, y: ty - 18,
+        x: spot.x, y: spot.y,
         w: 20, h: 16,
         open: false,
         color: '#c49040',
@@ -350,11 +534,19 @@ const InteractiveWorld = (() => {
     return chests;
   }
 
-  function generateCrystals(heights) {
+  function generateCrystals(heights, spreader) {
     const crystals = [];
-    for (let i = 0; i < CFG.CRYSTAL_COUNT; i++) {
-      const x = 100 + Math.random() * (CFG.WORLD_WIDTH - 200);
-      const y = getTerrainY(heights, x) - 40 - Math.random() * 80;
+    const n = CFG.CRYSTAL_COUNT;
+    for (let i = 0; i < n; i++) {
+      const spot = spreader
+        ? spreader.tryPlace(() => {
+            const x = spreader.bandX(i, n, 160, 0.55);
+            return { x, y: getTerrainY(heights, x) - 40 - Math.random() * 80 };
+          }, 32, PICKUP_SPREAD_MIN)
+        : null;
+      if (spreader && !spot) continue;
+      const x = spot ? spot.x : 100 + Math.random() * (CFG.WORLD_WIDTH - 200);
+      const y = spot ? spot.y : getTerrainY(heights, x) - 40 - Math.random() * 80;
       const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'];
       crystals.push({
         x, y,
@@ -375,22 +567,8 @@ const InteractiveWorld = (() => {
   // the player can drop in (rendering clips caves below the surface line).
   const COLORS_LIST = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'];
 
-  function makeStalactites(r) {
-    const out = [];
-    const n = 1 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < n; i++) {
-      out.push({
-        dx: (Math.random() - 0.5) * r * 1.0,
-        len: 10 + Math.random() * 16,
-        w: 3 + Math.random() * 4,
-        up: false
-      });
-    }
-    return out;
-  }
-
   function makeChamber(x, y, r) {
-    return { x, y, r, crystals: [], stalactites: makeStalactites(r), boulders: [] };
+    return { x, y, r, crystals: [], stalactites: [], boulders: [] };
   }
 
   const CAVE_DECOR_CELL = 200;
@@ -401,6 +579,12 @@ const InteractiveWorld = (() => {
   function roomFloorY(room, dx) {
     const clamped = Math.min(Math.abs(dx), room.r - 5);
     return room.y + Math.sqrt(room.r * room.r - clamped * clamped);
+  }
+
+  // Y on the top arc of a circular chamber/pocket.
+  function roomCeilingY(room, dx) {
+    const clamped = Math.min(Math.abs(dx), room.r - 5);
+    return room.y - Math.sqrt(room.r * room.r - clamped * clamped);
   }
 
   function createCaveDecorGrid() {
@@ -424,15 +608,15 @@ const InteractiveWorld = (() => {
   }
 
   // Pick a spot on the floor arc inside carved cave space.
-  function pickRoomFloorSpot(caves, heights, room, minSep = 36) {
-    for (let t = 0; t < 14; t++) {
-      const dx = (Math.random() - 0.5) * room.r * 1.35;
+  function pickRoomFloorSpot(caves, heights, room, minSep = 36, heavenHeights) {
+    for (let t = 0; t < 18; t++) {
+      const dx = (Math.random() - 0.5) * room.r * 1.25;
       if (Math.abs(dx) >= room.r - 8) continue;
       const x = room.x + dx;
       const y = roomFloorY(room, dx);
-      if (!caveCarved(caves, x, y - 4)) continue;
-      if (!caveCarved(caves, x, y - 12)) continue;
-      if (!isRockAt(caves, heights, x, y + 5)) continue;
+      if (!caveCarved(caves, x, y - 6)) continue;
+      if (!caveCarved(caves, x, y - 16)) continue;
+      if (!isRockAt(caves, heights, x, y + 6, heavenHeights)) continue;
       if (room._placed) {
         let ok = true;
         for (const p of room._placed) {
@@ -446,8 +630,31 @@ const InteractiveWorld = (() => {
     return null;
   }
 
-  // Spread boulders, crystals, chests, and buckets with per-area caps.
-  function layoutCaveProps(caves, heights) {
+  // Pick a spot on the ceiling arc with rock above and open air below.
+  function pickRoomCeilingSpot(caves, heights, room, heavenHeights, minSep = 28) {
+    for (let t = 0; t < 18; t++) {
+      const dx = (Math.random() - 0.5) * room.r * 1.15;
+      if (Math.abs(dx) >= room.r - 10) continue;
+      const x = room.x + dx;
+      const y = roomCeilingY(room, dx);
+      if (!caveCarved(caves, x, y + 10)) continue;
+      if (!caveCarved(caves, x, y + 22)) continue;
+      if (!isRockAt(caves, heights, x, y - 5, heavenHeights)) continue;
+      if (room._placed) {
+        let ok = true;
+        for (const p of room._placed) {
+          const ddx = p.x - x, ddy = p.y - y;
+          if (ddx * ddx + ddy * ddy < minSep * minSep) { ok = false; break; }
+        }
+        if (!ok) continue;
+      }
+      return { x, y, dx };
+    }
+    return null;
+  }
+
+  // Spread boulders, crystals, stalactites, chests, and buckets with per-area caps.
+  function layoutCaveProps(caves, heights, heavenHeights, spreader) {
     const grid = createCaveDecorGrid();
     const LOOT = ['💎 Gems', '🗝️ Old Key', '📜 Map Scrap', '🪙 Gold Stash', '🔮 Relic', '⚙️ Cog'];
     const caveChests = [];
@@ -456,42 +663,71 @@ const InteractiveWorld = (() => {
     for (const c of caves.chambers) {
       c.boulders = [];
       c.crystals = [];
+      c.stalactites = [];
       c._placed = [];
       const depthFrac = Math.min(1, c.y / CFG.WORLD_HEIGHT);
 
       if (Math.random() < 0.28 + depthFrac * 0.15) {
         const n = Math.random() < 0.35 + depthFrac * 0.25 ? 2 : 1;
         for (let i = 0; i < n; i++) {
-          const spot = pickRoomFloorSpot(caves, heights, c);
+          const spot = pickRoomFloorSpot(caves, heights, c, 36, heavenHeights);
           if (!spot || !grid.canPlace(spot.x, spot.y, 'boulder')) continue;
           grid.mark(spot.x, spot.y, 'boulder');
           c._placed.push(spot);
           c.boulders.push({
             dx: spot.dx,
-            dy: spot.y - c.y,
             r: 4 + Math.random() * 5 * (0.45 + depthFrac * 0.55)
           });
         }
       }
 
       if (Math.random() < 0.18) {
-        const spot = pickRoomFloorSpot(caves, heights, c);
+        const spot = pickRoomFloorSpot(caves, heights, c, 36, heavenHeights);
         if (spot && grid.canPlace(spot.x, spot.y, 'crystal')) {
           grid.mark(spot.x, spot.y, 'crystal');
           c._placed.push(spot);
           c.crystals.push({
             dx: spot.dx,
-            dy: spot.y - c.y,
             r: 2 + Math.random() * 2.5,
             color: COLORS_LIST[Math.floor(Math.random() * COLORS_LIST.length)]
           });
         }
       }
 
+      if (Math.random() < 0.42 + depthFrac * 0.18) {
+        const hangN = 1 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < hangN; i++) {
+          const spot = pickRoomCeilingSpot(caves, heights, c, heavenHeights);
+          if (!spot) continue;
+          c._placed.push(spot);
+          c.stalactites.push({
+            dx: spot.dx,
+            len: 10 + Math.random() * 18,
+            w: 3 + Math.random() * 4,
+            up: false
+          });
+        }
+      }
+
+      if (Math.random() < 0.22) {
+        const spot = pickRoomFloorSpot(caves, heights, c, 40, heavenHeights);
+        if (spot) {
+          c._placed.push(spot);
+          c.stalactites.push({
+            dx: spot.dx,
+            len: 8 + Math.random() * 14,
+            w: 3 + Math.random() * 3,
+            up: true
+          });
+        }
+      }
+
       if (c.y > getTerrainY(heights, c.x) + 320 && Math.random() < 0.22) {
-        const spot = pickRoomFloorSpot(caves, heights, c, 44);
-        if (spot && grid.canPlace(spot.x, spot.y, 'bucket')) {
+        const spot = pickRoomFloorSpot(caves, heights, c, 44, heavenHeights);
+        if (spot && grid.canPlace(spot.x, spot.y, 'bucket')
+            && (!spreader || spreader.canPlace(spot.x, spot.y, CAVE_PICKUP_SPREAD_MIN))) {
           grid.mark(spot.x, spot.y, 'bucket');
+          if (spreader) spreader.mark(spot.x, spot.y);
           c._placed.push(spot);
           buckets.push({ x: spot.x, y: spot.y - 6, bob: Math.random() * 6 });
         }
@@ -501,19 +737,33 @@ const InteractiveWorld = (() => {
 
     for (const p of (caves.pockets || [])) {
       p._placed = [];
-      const spot = pickRoomFloorSpot(caves, heights, p, 40);
-      if (spot && grid.canPlace(spot.x, spot.y, 'chest')) {
+      p.stalactites = [];
+      const spot = pickRoomFloorSpot(caves, heights, p, 40, heavenHeights);
+      if (spot && grid.canPlace(spot.x, spot.y, 'chest')
+          && (!spreader || spreader.canPlace(spot.x, spot.y, CAVE_PICKUP_SPREAD_MIN))) {
         grid.mark(spot.x, spot.y, 'chest');
+        if (spreader) spreader.mark(spot.x, spot.y);
         caveChests.push({
           x: spot.x - 10, y: spot.y - 14, w: 20, h: 16, open: false,
           pulse: Math.random() * 6,
           loot: LOOT[Math.floor(Math.random() * LOOT.length)]
         });
       }
-      const bSpot = pickRoomFloorSpot(caves, heights, p, 50);
-      if (bSpot && grid.canPlace(bSpot.x, bSpot.y, 'bucket')) {
+      const bSpot = pickRoomFloorSpot(caves, heights, p, 50, heavenHeights);
+      if (bSpot && grid.canPlace(bSpot.x, bSpot.y, 'bucket')
+          && (!spreader || spreader.canPlace(bSpot.x, bSpot.y, CAVE_PICKUP_SPREAD_MIN))) {
         grid.mark(bSpot.x, bSpot.y, 'bucket');
+        if (spreader) spreader.mark(bSpot.x, bSpot.y);
         buckets.push({ x: bSpot.x, y: bSpot.y - 6, bob: Math.random() * 6 });
+      }
+      const ceilSpot = pickRoomCeilingSpot(caves, heights, p, heavenHeights);
+      if (ceilSpot) {
+        p.stalactites.push({
+          dx: ceilSpot.dx,
+          len: 12 + Math.random() * 14,
+          w: 3 + Math.random() * 3,
+          up: false
+        });
       }
       delete p._placed;
     }
@@ -622,89 +872,119 @@ const InteractiveWorld = (() => {
   }
 
   // Shovel pickups on the surface and in caves.
-  function generateShovels(heights, entrances) {
+  function generateShovels(heights, spreader) {
     const shovels = [];
-    const W = CFG.WORLD_WIDTH;
     const n = CFG.SHOVELS_SURFACE;
-    const spots = [];
-    if (entrances && entrances.length) {
-      for (const ex of entrances) spots.push(ex + (Math.random() - 0.5) * 80);
-    }
-    while (spots.length < n) {
-      spots.push(W * (0.08 + Math.random() * 0.84));
-    }
+    const margin = 140;
     for (let i = 0; i < n; i++) {
-      const x = spots[i % spots.length] + (i > 0 ? (Math.random() - 0.5) * 120 : 0);
+      const spot = spreader
+        ? spreader.tryPlace(() => {
+            const x = spreader.bandX(i, n, margin, 0.55);
+            return { x, y: getTerrainY(heights, x) - 16 };
+          }, 32, PICKUP_SPREAD_MIN)
+        : { x: margin + Math.random() * (CFG.WORLD_WIDTH - margin * 2), y: 0 };
+      if (!spot) continue;
+      const r = Math.random();
+      const tier = r < 0.60 ? 0 : r < 0.82 ? 1 : r < 0.96 ? 2 : 3;
       shovels.push({
-        x, y: getTerrainY(heights, x) - 16, taken: false,
-        bob: Math.random() * Math.PI * 2, kind: 'surface'
+        x: spot.x, y: spot.y, taken: false,
+        bob: Math.random() * Math.PI * 2, kind: 'surface', tier
       });
     }
     return shovels;
   }
 
-  function generateCaveShovels(caves, heights) {
+  function generateCaveShovels(caves, heights, heavenHeights, spreader) {
     const shovels = [];
     if (!caves) return shovels;
     let placed = 0;
     const target = CFG.SHOVELS_CAVE;
-    for (const c of caves.chambers) {
+    const surfAvg = getTerrainY(heights, CFG.WORLD_WIDTH * 0.5);
+    const chambers = shuffleInPlace(caves.chambers.slice());
+    for (const c of chambers) {
       if (placed >= target) break;
-      if (Math.random() > 0.3) continue;
+      if (Math.random() > 0.32) continue;
+      const spot = pickRoomFloorSpot(caves, heights, c, 48, heavenHeights);
+      if (!spot) continue;
+      if (spreader && !spreader.canPlace(spot.x, spot.y, CAVE_PICKUP_SPREAD_MIN)) continue;
+      if (spreader) spreader.mark(spot.x, spot.y);
+      const depth = spot.y - surfAvg;
+      let tier;
+      if (depth < 180)        tier = Math.random() < 0.5 ? 1 : 2;
+      else if (depth < 400)   tier = Math.random() < 0.5 ? 2 : 3;
+      else if (depth < 650)   tier = Math.random() < 0.4 ? 3 : 4;
+      else                    tier = Math.random() < 0.4 ? 4 : 5;
       shovels.push({
-        x: c.x + (Math.random() - 0.5) * c.r * 0.6,
-        y: c.y + c.r * 0.4,
-        taken: false, bob: Math.random() * Math.PI * 2, kind: 'cave'
+        x: spot.x, y: spot.y - 14, taken: false,
+        bob: Math.random() * Math.PI * 2, kind: 'cave', tier
       });
       placed++;
     }
-    for (const p of (caves.pockets || [])) {
+    const pockets = shuffleInPlace((caves.pockets || []).slice());
+    for (const p of pockets) {
       if (placed >= target) break;
+      const spot = pickRoomFloorSpot(caves, heights, p, 48, heavenHeights);
+      if (!spot) continue;
+      if (spreader && !spreader.canPlace(spot.x, spot.y, CAVE_PICKUP_SPREAD_MIN)) continue;
+      if (spreader) spreader.mark(spot.x, spot.y);
       shovels.push({
-        x: p.x, y: p.y + p.r * 0.35,
-        taken: false, bob: Math.random() * Math.PI * 2, kind: 'cave'
+        x: spot.x, y: spot.y - 14, taken: false,
+        bob: Math.random() * Math.PI * 2, kind: 'cave', tier: 6
       });
       placed++;
     }
     return shovels;
   }
 
-  function generateSticks(heights, entrances) {
+  function generateSticks(heights, spreader) {
     const sticks = [];
     const n = CFG.STICKS_SURFACE;
+    const margin = 140;
     for (let i = 0; i < n; i++) {
-      const x = entrances && entrances.length
-        ? entrances[i % entrances.length] + (Math.random() - 0.5) * 200
-        : 100 + Math.random() * (CFG.WORLD_WIDTH - 200);
+      const spot = spreader
+        ? spreader.tryPlace(() => {
+            const x = spreader.bandX(i, n, margin, 0.55);
+            return { x, y: getTerrainY(heights, x) - 12 };
+          }, 32, PICKUP_SPREAD_MIN)
+        : { x: margin + Math.random() * (CFG.WORLD_WIDTH - margin * 2), y: 0 };
+      if (!spot) continue;
       sticks.push({
-        x, y: getTerrainY(heights, x) - 12,
+        x: spot.x, y: spot.y,
         taken: false, bob: Math.random() * Math.PI * 2, kind: 'surface'
       });
     }
     return sticks;
   }
 
-  function generateCaveSticks(caves) {
+  function generateCaveSticks(caves, heights, heavenHeights, spreader) {
     const sticks = [];
     if (!caves) return sticks;
     let placed = 0;
     const target = CFG.STICKS_CAVE;
-    for (const c of caves.chambers) {
+    const chambers = shuffleInPlace(caves.chambers.slice());
+    for (const c of chambers) {
       if (placed >= target) break;
-      if (Math.random() > 0.45) continue;
+      if (Math.random() > 0.42) continue;
+      const spot = pickRoomFloorSpot(caves, heights, c, 40, heavenHeights);
+      if (!spot) continue;
+      if (spreader && !spreader.canPlace(spot.x, spot.y, CAVE_PICKUP_SPREAD_MIN)) continue;
+      if (spreader) spreader.mark(spot.x, spot.y);
       sticks.push({
-        x: c.x + (Math.random() - 0.5) * c.r * 0.5,
-        y: c.y + c.r * 0.35,
-        taken: false, bob: Math.random() * Math.PI * 2, kind: 'cave'
+        x: spot.x, y: spot.y - 10, taken: false,
+        bob: Math.random() * Math.PI * 2, kind: 'cave'
       });
       placed++;
     }
-    for (const p of (caves.pockets || [])) {
+    const pockets = shuffleInPlace((caves.pockets || []).slice());
+    for (const p of pockets) {
       if (placed >= target) break;
+      const spot = pickRoomFloorSpot(caves, heights, p, 40, heavenHeights);
+      if (!spot) continue;
+      if (spreader && !spreader.canPlace(spot.x, spot.y, CAVE_PICKUP_SPREAD_MIN)) continue;
+      if (spreader) spreader.mark(spot.x, spot.y);
       sticks.push({
-        x: p.x + (Math.random() - 0.5) * p.r * 0.4,
-        y: p.y + p.r * 0.3,
-        taken: false, bob: Math.random() * Math.PI * 2, kind: 'cave'
+        x: spot.x, y: spot.y - 10, taken: false,
+        bob: Math.random() * Math.PI * 2, kind: 'cave'
       });
       placed++;
     }
@@ -751,7 +1031,7 @@ const InteractiveWorld = (() => {
     if (x < 0 || x > CFG.WORLD_WIDTH) return true;
     const surfY = getTerrainY(heights, x);
     if (y < surfY) {
-      if (CFG.HEAVEN_ENABLED && heavenHeights) {
+      if (heavenHeights) {
         const hgY = getHeavenGroundY(heavenHeights, x);
         if (y < hgY) return false;
         if (y < hgY + CFG.HEAVEN_REALM_DEPTH) return true;
@@ -821,6 +1101,16 @@ const InteractiveWorld = (() => {
     hardrock: { name: 'hard rock', hardness: 7, color: '#3a3540', dust: '#6a6575' },
     basalt: { name: 'basalt', hardness: 11, color: '#2a1820', dust: '#6a3a3a' }
   };
+
+  const SHOVEL_TIERS = [
+    { name: 'Rusty Shovel',   durability: 120,  cooldown: 2.0, bladeColor: '#cfd6dd', handleColor: '#8a6a40', glowColor: '#ffd479', holeR: 21, effect: null, bladeW: 5, bladeH: 8 },
+    { name: 'Stone Shovel',   durability: 180,  cooldown: 2.0, bladeColor: '#7a7570', handleColor: '#6a5a40', glowColor: '#b8a898', holeR: 21, effect: null, bladeW: 6, bladeH: 9 },
+    { name: 'Copper Shovel',  durability: 260,  cooldown: 1.8, bladeColor: '#d4834a', handleColor: '#7a5a30', glowColor: '#e8a860', holeR: 22, effect: null, bladeW: 6, bladeH: 9 },
+    { name: 'Iron Shovel',    durability: 400,  cooldown: 1.5, bladeColor: '#b8c0cc', handleColor: '#5a4a38', glowColor: '#aabbdd', holeR: 23, effect: 'wideSwing', bladeW: 7, bladeH: 10 },
+    { name: 'Steel Shovel',   durability: 600,  cooldown: 1.2, bladeColor: '#6a9ac8', handleColor: '#3a4050', glowColor: '#6ac8ff', holeR: 24, effect: 'shockwave', bladeW: 7, bladeH: 10 },
+    { name: 'Void Shovel',    durability: 900,  cooldown: 0.8, bladeColor: '#3a1a4a', handleColor: '#1a0a20', glowColor: '#9a4aff', holeR: 28, effect: 'voidRend', bladeW: 8, bladeH: 12 },
+    { name: 'Celestial Shovel', durability: 1500, cooldown: 0.5, bladeColor: '#ffe8a0', handleColor: '#c8a060', glowColor: '#ffd700', holeR: 32, effect: 'starfall', bladeW: 9, bladeH: 13 }
+  ];
 
   // Which material fills a given underground point.
   function materialAt(heights, x, y) {
@@ -1162,6 +1452,7 @@ const InteractiveWorld = (() => {
       this.portalCooldown = 0;
       this.landDust = 0;
       this.hasShovel = false;
+      this.shovelTier = 0;
       this.digCooldown = 0;
       this.maxShovelDurability = 120;
       this.shovelDurability = 0;
@@ -1179,6 +1470,8 @@ const InteractiveWorld = (() => {
       this._jumpHeld = false;
       this._digTarget = null;
       this._rubProgress = 0;
+      this.lastCheckpoint = null;
+      this.trinkets = 0;
     }
 
     tryJump(keys) {
@@ -1649,17 +1942,20 @@ const InteractiveWorld = (() => {
       this.platforms = basePlatforms.concat(ascentPlatforms, cloudPlatforms);
       this.heavenTrees = generateHeavenTrees(this.heavenTerrain);
       this.portals = generatePortals(this.terrain);
-      this.chests = generateChests(this.terrain);
-      this.crystals = generateCrystals(this.terrain);
-      this.shovels = generateShovels(this.terrain, this.caves.entrances)
-        .concat(generateCaveShovels(this.caves, this.terrain));
-      this.stickPickups = generateSticks(this.terrain, this.caves.entrances)
-        .concat(generateCaveSticks(this.caves));
+      const pickupSpread = createPickupSpreader();
+      this.chests = generateChests(this.terrain, pickupSpread);
+      this.crystals = generateCrystals(this.terrain, pickupSpread);
+      this.shovels = generateShovels(this.terrain, pickupSpread)
+        .concat(generateCaveShovels(this.caves, this.terrain, this.heavenTerrain, pickupSpread));
+      this.stickPickups = generateSticks(this.terrain, pickupSpread)
+        .concat(generateCaveSticks(this.caves, this.terrain, this.heavenTerrain, pickupSpread));
       this.fires = [];
       this.heat = 0;
-      const layout = layoutCaveProps(this.caves, this.terrain);
+      const layout = layoutCaveProps(this.caves, this.terrain, this.heavenTerrain, pickupSpread);
       this.caveChests = layout.caveChests;
       this.buckets = layout.buckets;
+      this.checkpoints = generateCheckpoints(this.terrain, this.caves, this.heavenTerrain);
+      this.mapItems = generateMapItems(this.terrain, this.caves, this.heavenTerrain, pickupSpread);
 
       const startY = getTerrainY(this.terrain, 100);
       this.players = [];
@@ -2014,56 +2310,125 @@ const InteractiveWorld = (() => {
     // the player can tunnel their own caves anywhere.
     digAt(p, keys) {
       if (!p.hasShovel || p.digCooldown > 0) return;
-      p.digCooldown = 2;
+      const tierDef = SHOVEL_TIERS[p.shovelTier] || SHOVEL_TIERS[0];
+      p.digCooldown = tierDef.cooldown;
       const digDown = keys.s || keys.down;
       const fx = p.x + p.w / 2 + (digDown ? 0 : p.facing * 16);
       const fy = p.y + p.h + (digDown ? 8 : -4);
 
-      // Nothing to dig if it's already open cave/air.
       if (!isRockAt(this.caves, this.terrain, fx, fy, this.heavenTerrain)) return;
 
       const mat = materialAt(this.terrain, fx, fy);
 
-      // Each spot has durability = the material's hardness in chips. The target
-      // is keyed to a grid CELL (not the exact point) so progress keeps building
-      // while the player runs — enter a new cell and that's fresh rock to chip.
       const { cellX, cellY } = digCellKey(fx, fy);
       const t = p._digTarget;
+      const need = tierDef.effect === 'voidRend' ? 1 : mat.hardness;
       if (!t || t.cellX !== cellX || t.cellY !== cellY) {
-        p._digTarget = { x: fx, y: fy, cellX, cellY, hits: 0, need: mat.hardness, mat };
+        p._digTarget = { x: fx, y: fy, cellX, cellY, hits: 0, need, mat };
       }
       const target = p._digTarget;
       target.x = fx; target.y = fy;
       target.hits++;
 
-      // The shovel wears proportionally to hardness — sand is gentle, basalt eats it.
       p.shovelDurability = Math.max(0, p.shovelDurability - mat.hardness * 0.8);
 
-      // Dust in the material's colour.
       if (!this.caves.digHoles) this.caves.digHoles = [];
-      for (let i = 0; i < 6; i++) {
+      const dustCount = tierDef.effect === 'starfall' ? 18 : tierDef.effect === 'voidRend' ? 12 : 6;
+      for (let i = 0; i < dustCount; i++) {
         const pt = new WorldParticle(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT);
         pt.x = fx; pt.y = fy;
         pt.vx = (Math.random() - 0.5) * 3.5;
         pt.vy = -Math.random() * 2.5;
         pt.l = 0.8;
-        pt.color = mat.dust;
+        pt.color = tierDef.effect === 'voidRend' ? '#9a4aff' : tierDef.effect === 'starfall' ? '#ffd700' : mat.dust;
         this.particles.push(pt);
       }
 
-      // Break through once the spot's durability is spent.
+      // Tier 3 — Wide Swing: also dig the cell above/below the target.
+      if (tierDef.effect === 'wideSwing') {
+        const offY = digDown ? -1 : 1;
+        this._digCell(this.caves, this.terrain, cellX, cellY + offY);
+      }
+
       if (target.hits >= target.need) {
         const hx = cellX * DIG_CELL + DIG_CELL / 2;
         const hy = cellY * DIG_CELL + DIG_CELL / 2;
-        this.caves.digHoles.push({ x: hx, y: hy, r: 21 });
+        const holeR = tierDef.holeR;
+        this.caves.digHoles.push({ x: hx, y: hy, r: holeR });
         if (this.caves.digHoles.length > 320) this.caves.digHoles.shift();
         p._digTarget = null;
+
+        // Tier 4 — Shockwave: damage all 8 neighbors on break.
+        if (tierDef.effect === 'shockwave') {
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              if (dx === 0 && dy === 0) continue;
+              this._digCell(this.caves, this.terrain, cellX + dx, cellY + dy);
+            }
+          }
+        }
+
+        // Tier 6 — Starfall: dig a full 3x3 block instantly.
+        if (tierDef.effect === 'starfall') {
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              if (dx === 0 && dy === 0) continue;
+              this._digCellInstant(this.caves, this.terrain, cellX + dx, cellY + dy, holeR);
+            }
+          }
+          this.cameraShake = Math.max(this.cameraShake || 0, 6);
+        }
+
+        if (tierDef.effect === 'voidRend') {
+          for (let i = 0; i < 16; i++) {
+            const pt = new WorldParticle(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT);
+            pt.x = hx; pt.y = hy;
+            pt.vx = (Math.random() - 0.5) * 6;
+            pt.vy = (Math.random() - 0.5) * 6;
+            pt.l = 0.6;
+            pt.color = '#9a4aff';
+            this.particles.push(pt);
+          }
+        }
+
+        if (tierDef.effect === 'starfall') {
+          for (let i = 0; i < 30; i++) {
+            const pt = new WorldParticle(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT);
+            pt.x = hx + (Math.random() - 0.5) * 50;
+            pt.y = hy + (Math.random() - 0.5) * 50;
+            pt.vx = (Math.random() - 0.5) * 8;
+            pt.vy = (Math.random() - 0.5) * 8;
+            pt.l = 0.9;
+            pt.size = 2 + Math.random() * 4;
+            pt.color = ['#ffd700', '#ffe8a0', '#ffffff', '#ff6b6b', '#6ac8ff'][Math.floor(Math.random() * 5)];
+            this.particles.push(pt);
+          }
+        }
       }
 
       if (p.shovelDurability <= 0) {
         p.hasShovel = false;
+        p.shovelTier = 0;
         p._digTarget = null;
         this.showInteraction('🛠️ Shovel broke! Find another', '#ff6b6b');
+      }
+    }
+
+    _digCell(caves, heights, cellX, cellY) {
+      const hx = cellX * DIG_CELL + DIG_CELL / 2;
+      const hy = cellY * DIG_CELL + DIG_CELL / 2;
+      if (isRockAt(caves, heights, hx, hy, this.heavenTerrain)) {
+        this.caves.digHoles.push({ x: hx, y: hy, r: 14 });
+        if (this.caves.digHoles.length > 320) this.caves.digHoles.shift();
+      }
+    }
+
+    _digCellInstant(caves, heights, cellX, cellY, r) {
+      const hx = cellX * DIG_CELL + DIG_CELL / 2;
+      const hy = cellY * DIG_CELL + DIG_CELL / 2;
+      if (isRockAt(caves, heights, hx, hy, this.heavenTerrain)) {
+        this.caves.digHoles.push({ x: hx, y: hy, r });
+        if (this.caves.digHoles.length > 320) this.caves.digHoles.shift();
       }
     }
 
@@ -2121,17 +2486,26 @@ const InteractiveWorld = (() => {
 
     killPlayer(p, reason) {
       const idx = this.players.indexOf(p);
-      const spawnX = 100 + idx * 35;
-      p.x = spawnX;
-      p.y = getTerrainY(this.terrain, spawnX) - p.h - 5;
+      let rx, ry;
+      if (p.lastCheckpoint) {
+        rx = p.lastCheckpoint.x - p.w / 2;
+        ry = p.lastCheckpoint.y - p.h - 2;
+      } else {
+        rx = 100 + idx * 35;
+        ry = getTerrainY(this.terrain, rx) - p.h - 5;
+      }
+      p.x = rx;
+      p.y = ry;
       p.vx = 0; p.vy = 0;
       p.water = p.maxWater;
       p.freeze = 0;
       p.deathFlash = 30;
       if (reason === 'freeze') {
-        this.showInteraction('❄️ Frozen solid — back to the surface', '#a8d8ff');
+        const where = p.lastCheckpoint ? p.lastCheckpoint.label : 'the surface';
+        this.showInteraction(`❄️ Frozen — respawned at ${where}`, '#a8d8ff');
       } else {
-        this.showInteraction('💀 Dehydrated — back to the surface', '#ff6b6b');
+        const where = p.lastCheckpoint ? p.lastCheckpoint.label : 'the surface';
+        this.showInteraction(`💀 Dehydrated — respawned at ${where}`, '#ff6b6b');
       }
     }
 
@@ -2282,6 +2656,12 @@ const InteractiveWorld = (() => {
       const tCY = cen.y - this.canvas.height * 0.5;
       this.cameraX += (tCX - this.cameraX) * 0.08;
       this.cameraY += (tCY - this.cameraY) * 0.08;
+      if (this.cameraShake > 0) {
+        this.cameraX += (Math.random() - 0.5) * this.cameraShake;
+        this.cameraY += (Math.random() - 0.5) * this.cameraShake;
+        this.cameraShake *= 0.88;
+        if (this.cameraShake < 0.3) this.cameraShake = 0;
+      }
       this.cameraX = Math.max(0, Math.min(this.cameraX, CFG.WORLD_WIDTH - this.canvas.width));
       this.cameraY = Math.max(camMinY, Math.min(this.cameraY, CFG.WORLD_HEIGHT - this.canvas.height));
 
@@ -2319,8 +2699,11 @@ const InteractiveWorld = (() => {
               if (dx * dx + dy * dy < 26 * 26) {
                 s.taken = true;
                 pl.hasShovel = true;
-                pl.shovelDurability = pl.maxShovelDurability;
-                this.showInteraction('🪏 Shovel! Press F to dig', '#ffd479');
+                pl.shovelTier = s.tier != null ? s.tier : 0;
+                const td = SHOVEL_TIERS[pl.shovelTier] || SHOVEL_TIERS[0];
+                pl.maxShovelDurability = td.durability;
+                pl.shovelDurability = td.durability;
+                this.showInteraction('🪏 ' + td.name + '! Press F to dig', td.glowColor);
                 break;
               }
             }
@@ -2342,6 +2725,42 @@ const InteractiveWorld = (() => {
                 pl.sticks++;
                 this.showInteraction('🪵 Stick (' + pl.sticks + ')', '#c49040');
                 break;
+              }
+            }
+          }
+        }
+      }
+
+      if (this.mapItems) {
+        for (const it of this.mapItems) {
+          it.bob += 0.05;
+          if (it.taken) continue;
+          for (const pl of this.players) {
+            const pcx = pl.x + pl.w / 2;
+            const pcy = pl.y + pl.h / 2;
+            const dx = pcx - it.x, dy = pcy - it.y;
+            if (dx * dx + dy * dy < 20 * 20) {
+              it.taken = true;
+              pl.trinkets = (pl.trinkets || 0) + 1;
+              this.showInteraction(it.emoji + ' Found!', it.color);
+              break;
+            }
+          }
+        }
+      }
+
+      if (this.checkpoints) {
+        for (const cp of this.checkpoints) {
+          cp.pulse += 0.04;
+          for (const pl of this.players) {
+            const pcx = pl.x + pl.w / 2;
+            const pcy = pl.y + pl.h / 2;
+            const dx = pcx - cp.x, dy = pcy - cp.y;
+            if (dx * dx + dy * dy < 34 * 34) {
+              if (pl.lastCheckpoint !== cp) {
+                pl.lastCheckpoint = cp;
+                cp.activated = true;
+                this.showInteraction(`${cp.emoji} Checkpoint — ${cp.label}`, '#96ceb4');
               }
             }
           }
@@ -2392,6 +2811,8 @@ const InteractiveWorld = (() => {
       this.drawChests(ctx, cx, cy, W, H);
       this.drawSticks(ctx, cx, cy, W, H);
       this.drawShovels(ctx, cx, cy, W, H);
+      this.drawMapItems(ctx, cx, cy, W, H);
+      this.drawCheckpoints(ctx, cx, cy, W, H);
       this.drawFires(ctx, cx, cy, W, H);
       this.drawPortals(ctx, cx, cy, W, H);
       this.drawCreatures(ctx, cx, cy, W, H);
@@ -2496,6 +2917,7 @@ const InteractiveWorld = (() => {
       const rightSide = playerIndex % 2 === 1;
       const bottomPad = 52 + row * 44;
       const digLabel = this._playerDigLabels[playerIndex] || '🪏 F: dig · S+F: down';
+      const td = SHOVEL_TIERS[p.shovelTier] || SHOVEL_TIERS[0];
       ctx.save();
       ctx.font = '12px system-ui, sans-serif';
       ctx.textBaseline = 'middle';
@@ -2503,19 +2925,19 @@ const InteractiveWorld = (() => {
       const bx = rightSide ? W - tw - 12 : 12;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(bx, H - bottomPad, tw, 22);
-      ctx.fillStyle = '#ffd479';
+      ctx.fillStyle = td.glowColor;
       ctx.fillText(digLabel, bx + 9, H - bottomPad + 11);
 
-      // Shovel durability bar.
+      // Shovel durability bar with tier color.
       const barX = bx, by = H - bottomPad - 18, bw = 110, bh = 8;
       const frac = Math.max(0, p.shovelDurability / p.maxShovelDurability);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(barX - 2, by - 2, bw + 4, bh + 4);
-      ctx.fillStyle = frac < 0.25 ? '#ff5a4a' : '#caa055';
+      ctx.fillStyle = frac < 0.25 ? '#ff5a4a' : td.bladeColor;
       ctx.fillRect(barX, by, bw * frac, bh);
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.font = '9px system-ui, sans-serif';
-      ctx.fillText('shovel', barX + bw + 6, by + bh / 2);
+      ctx.fillText(td.name, barX + bw + 6, by + bh / 2);
       ctx.restore();
     }
 
@@ -2523,25 +2945,31 @@ const InteractiveWorld = (() => {
     drawDigTarget(ctx, cx, cy, player) {
       const t = player._digTarget;
       if (!t) return;
+      const td = SHOVEL_TIERS[player.shovelTier] || SHOVEL_TIERS[0];
       const gx = t.x - cx, gy = t.y - cy;
       const frac = Math.min(1, t.hits / t.need);
       ctx.save();
-      ctx.strokeStyle = t.mat ? t.mat.dust : '#caa055';
-      ctx.lineWidth = 2;
+      const ringColor = td.effect === 'voidRend' ? '#9a4aff' : td.effect === 'starfall' ? '#ffd700' : (t.mat ? t.mat.dust : '#caa055');
+      const ringR = td.effect === 'starfall' ? 22 : td.effect === 'voidRend' ? 18 : 14;
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = td.effect === 'starfall' ? 3 : 2;
       ctx.globalAlpha = 0.85;
-      // progress ring
+      ctx.shadowColor = ringColor;
+      ctx.shadowBlur = td.effect === 'starfall' ? 10 : td.effect === 'voidRend' ? 6 : 0;
       ctx.beginPath();
-      ctx.arc(gx, gy, 14, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+      ctx.arc(gx, gy, ringR, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
       ctx.stroke();
-      // crack marks
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 0.5;
       ctx.lineWidth = 1;
-      const cracks = Math.ceil(frac * 4);
+      const crackCount = td.effect === 'starfall' ? 8 : td.effect === 'voidRend' ? 6 : 4;
+      const cracks = Math.ceil(frac * crackCount);
       for (let i = 0; i < cracks; i++) {
-        const a = (i / 4) * Math.PI * 2;
+        const a = (i / crackCount) * Math.PI * 2 + frac * 0.5;
+        ctx.strokeStyle = ringColor;
         ctx.beginPath();
         ctx.moveTo(gx, gy);
-        ctx.lineTo(gx + Math.cos(a) * 10, gy + Math.sin(a) * 10);
+        ctx.lineTo(gx + Math.cos(a) * (10 + frac * 4), gy + Math.sin(a) * (10 + frac * 4));
         ctx.stroke();
       }
       ctx.restore();
@@ -2886,7 +3314,8 @@ const InteractiveWorld = (() => {
 
         // boulders — flat rocks sitting on the chamber floor arc
         for (const b of (c.boulders || [])) {
-          const bx = gx + b.dx, by = gy + b.dy;
+          const bx = gx + b.dx;
+          const by = gy + (roomFloorY(c, b.dx) - c.y);
           const br = b.r;
           const tilt = b.dx * 0.04;
           ctx.save();
@@ -2907,11 +3336,13 @@ const InteractiveWorld = (() => {
           ctx.restore();
         }
 
-        // stalactites / stalagmites
+        // stalactites / stalagmites — anchored to ceiling or floor arc
         ctx.fillStyle = 'rgba(40,28,26,0.95)';
         for (const s of (c.stalactites || [])) {
           const sx = gx + s.dx;
-          const topY = s.up ? gy + c.r : gy - c.r;
+          const topY = s.up
+            ? (gy + (roomFloorY(c, s.dx) - c.y))
+            : (gy + (roomCeilingY(c, s.dx) - c.y));
           const tipY = s.up ? topY - s.len : topY + s.len;
           ctx.beginPath();
           ctx.moveTo(sx - s.w / 2, topY);
@@ -2948,7 +3379,8 @@ const InteractiveWorld = (() => {
         ctx.fill();
 
         for (const cr of (c.crystals || [])) {
-          const cx2 = gx + cr.dx, cy2 = gy + cr.dy;
+          const cx2 = gx + cr.dx;
+          const cy2 = gy + (roomFloorY(c, cr.dx) - c.y);
           ctx.save();
           ctx.translate(cx2, cy2 - cr.r);
           ctx.fillStyle = cr.color;
@@ -3014,25 +3446,47 @@ const InteractiveWorld = (() => {
         if (s.taken) continue;
         const sx = s.x - cx, sy = s.y - cy + Math.sin(s.bob) * 3;
         if (sx < -30 || sx > W + 30 || sy < -30 || sy > H + 30) continue;
+        const td = SHOVEL_TIERS[s.tier != null ? s.tier : 0] || SHOVEL_TIERS[0];
         ctx.save();
         // glow
-        ctx.shadowColor = '#ffd479';
-        ctx.shadowBlur = 12;
+        ctx.shadowColor = td.glowColor;
+        ctx.shadowBlur = td.effect === 'starfall' ? 24 : td.effect === 'voidRend' ? 18 : 12;
+        if (td.effect === 'starfall') {
+          ctx.shadowColor = ['#ffd700', '#ffe8a0', '#ffffff', '#6ac8ff'][Math.floor(Math.sin(s.bob * 2) * 2 + 2) % 4];
+        }
         // handle
-        ctx.strokeStyle = '#8a6a40';
+        ctx.strokeStyle = td.handleColor;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(sx, sy - 12);
         ctx.lineTo(sx, sy + 8);
         ctx.stroke();
         // blade
-        ctx.fillStyle = '#cfd6dd';
+        ctx.fillStyle = td.bladeColor;
+        const bw = td.bladeW, bh = td.bladeH;
         ctx.beginPath();
-        ctx.moveTo(sx - 5, sy + 6);
-        ctx.lineTo(sx + 5, sy + 6);
-        ctx.lineTo(sx, sy + 14);
+        ctx.moveTo(sx - bw, sy + 6);
+        ctx.lineTo(sx + bw, sy + 6);
+        ctx.lineTo(sx, sy + 6 + bh);
         ctx.closePath();
         ctx.fill();
+        // tier 6 celestial extra sparkles
+        if (td.effect === 'starfall') {
+          ctx.fillStyle = '#ffffff';
+          for (let i = 0; i < 4; i++) {
+            const a = s.bob + i * 1.57;
+            ctx.beginPath();
+            ctx.arc(sx + Math.cos(a) * 10, sy - 4 + Math.sin(a * 0.7) * 6, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        // tier 5 void aura
+        if (td.effect === 'voidRend') {
+          ctx.fillStyle = 'rgba(154,74,255,0.15)';
+          ctx.beginPath();
+          ctx.arc(sx, sy + 2, 12 + Math.sin(s.bob * 1.5) * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.restore();
       }
     }
@@ -3051,6 +3505,47 @@ const InteractiveWorld = (() => {
         ctx.moveTo(sx - 6, sy + 4);
         ctx.lineTo(sx + 6, sy - 4);
         ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    drawMapItems(ctx, cx, cy, W, H) {
+      if (!this.mapItems) return;
+      for (const it of this.mapItems) {
+        if (it.taken) continue;
+        const sx = it.x - cx;
+        const sy = it.y - cy + Math.sin(it.bob) * 2;
+        if (sx < -24 || sx > W + 24 || sy < -24 || sy > H + 24) continue;
+        ctx.save();
+        ctx.font = '14px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = it.color;
+        ctx.shadowBlur = 8;
+        ctx.fillText(it.emoji, sx, sy);
+        ctx.restore();
+      }
+    }
+
+    drawCheckpoints(ctx, cx, cy, W, H) {
+      if (!this.checkpoints) return;
+      for (const cp of this.checkpoints) {
+        const sx = cp.x - cx;
+        const sy = cp.y - cy + Math.sin(cp.pulse) * 2;
+        if (sx < -40 || sx > W + 40 || sy < -40 || sy > H + 40) continue;
+        ctx.save();
+        const glow = cp.activated ? 14 : 8 + Math.sin(cp.pulse) * 3;
+        ctx.shadowColor = cp.activated ? '#96ceb4' : '#ffd479';
+        ctx.shadowBlur = glow;
+        ctx.font = '18px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cp.emoji, sx, sy - 4);
+        if (cp.activated) {
+          ctx.font = '8px system-ui, sans-serif';
+          ctx.fillStyle = 'rgba(150,206,180,0.9)';
+          ctx.fillText('✓', sx + 10, sy - 12);
+        }
         ctx.restore();
       }
     }
@@ -3678,12 +4173,14 @@ const InteractiveWorld = (() => {
   }
 
   return {
-    PLAYER_ROSTER,
+    PLAYER_ROSTER, SHOVEL_TIERS,
     WorldEngine, Player, generateTerrain, getTerrainY, getBiome, getBiomeAt,
     generateHeavenTerrain, getHeavenGroundY, generateCaves, caveCarved, isRockAt, touchesWall,
     materialAt, MATERIALS, digCellKey, DIG_CELL, inHeavenZone, computeSweatRate,
     generateShovels, generateCaveShovels, generateSticks, generateCaveSticks,
-    generateAscentPlatforms, generateCloudPlatforms, generateGateClouds, layoutCaveProps, roomFloorY
+    generateAscentPlatforms, generateCloudPlatforms, generateGateClouds,
+    generateCheckpoints, generateMapItems, layoutCaveProps, roomFloorY, roomCeilingY,
+    createPickupSpreader, PICKUP_SPREAD_MIN, CAVE_PICKUP_SPREAD_MIN
   };
 })();
 
