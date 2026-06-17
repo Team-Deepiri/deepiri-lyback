@@ -1323,6 +1323,7 @@ const InteractiveWorld = (() => {
         : (this.twoPlayer ? 2 : 1);
       this.playerCount = Math.min(4, Math.max(1, rawCount | 0));
       this.onEscape = options.onEscape || null;
+      this.onSettingsOpen = options.onSettingsOpen || options.onEscape || null;
       this.keys = {
         jumpPressed: false,
         jumpPressed0: false,
@@ -1636,17 +1637,14 @@ const InteractiveWorld = (() => {
     }
 
     setupInput() {
-      document.addEventListener('keydown', (e) => {
+      this.teardownInput();
+
+      const onKeyDown = (e) => {
         const key = e.key.toLowerCase();
         // In computer mode the keyboard belongs to the terminal — don't steer
         // the player. Escape leaves the computer.
         if (this.computerMode) {
           if (key === 'escape') this.exitComputer();
-          return;
-        }
-        if (key === 'escape' && this.onEscape) {
-          e.preventDefault();
-          this.onEscape();
           return;
         }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
@@ -1668,25 +1666,26 @@ const InteractiveWorld = (() => {
             if (key === ' ' || key === 'w') this.keys.jumpPressed = true;
           }
         }
-      });
-      document.addEventListener('keyup', (e) => {
+      };
+
+      const onKeyUp = (e) => {
         const key = e.key.toLowerCase();
-        const code = e.code;
         if (this.playerCount > 1) {
           this._handleMultiplayerKey(e, false);
           return;
         }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) this.keys[key.replace('arrow', '')] = false;
         else if (key === ' ' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'f' || key === 'r') this.keys[key === ' ' ? 'space' : key] = false;
-      });
-      this.canvas.addEventListener('click', (e) => {
+      };
+
+      const onClick = (e) => {
         const rect = this.canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left;
         const sy = e.clientY - rect.top;
-        if (this.onEscape && this._settingsBtnRect) {
+        if (this.onSettingsOpen && this._settingsBtnRect) {
           const r = this._settingsBtnRect;
           if (sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h) {
-            this.onEscape();
+            this.onSettingsOpen();
             return;
           }
         }
@@ -1704,12 +1703,34 @@ const InteractiveWorld = (() => {
           }
         }
         this.spawnBurst(e.clientX - rect.left, e.clientY - rect.top);
-      });
-      this.canvas.addEventListener('mousemove', (e) => {
+      };
+
+      const onMouseMove = (e) => {
         const rect = this.canvas.getBoundingClientRect();
         this.mouseX = e.clientX - rect.left;
         this.mouseY = e.clientY - rect.top;
-      });
+      };
+
+      this._inputHandlers = { onKeyDown, onKeyUp, onClick, onMouseMove };
+      document.addEventListener('keydown', onKeyDown);
+      document.addEventListener('keyup', onKeyUp);
+      this.canvas.addEventListener('click', onClick);
+      this.canvas.addEventListener('mousemove', onMouseMove);
+    }
+
+    teardownInput() {
+      if (!this._inputHandlers) return;
+      const h = this._inputHandlers;
+      document.removeEventListener('keydown', h.onKeyDown);
+      document.removeEventListener('keyup', h.onKeyUp);
+      this.canvas.removeEventListener('click', h.onClick);
+      this.canvas.removeEventListener('mousemove', h.onMouseMove);
+      this._inputHandlers = null;
+    }
+
+    destroy() {
+      this.stop();
+      this.teardownInput();
     }
 
     interactWithPortal() {
@@ -3077,13 +3098,13 @@ const InteractiveWorld = (() => {
       const posLabel = this.playerCount > 1
         ? 'x:' + this.players.map(pl => Math.floor(pl.x)).join('/')
         : `x:${Math.floor(this.players[0].x)}`;
-      ctx.fillText(`${biomeName} | ${posLabel}`, W - 14, this.onEscape ? 48 : 14);
+      ctx.fillText(`${biomeName} | ${posLabel}`, W - 14, this.onSettingsOpen ? 48 : 14);
 
       ctx.textAlign = 'left';
       const dayPhase = this.timeOfDay < 0.25 ? 'Night' : this.timeOfDay < 0.45 ? 'Dawn' : this.timeOfDay < 0.7 ? 'Day' : this.timeOfDay < 0.85 ? 'Dusk' : 'Night';
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.fillText(dayPhase, 14, hudY + 18);
-      if (this.onEscape) this.drawSettingsButton(ctx, W);
+      if (this.onSettingsOpen) this.drawSettingsButton(ctx, W);
     }
 
     drawSettingsButton(ctx, W) {
@@ -3123,7 +3144,7 @@ const InteractiveWorld = (() => {
       const mapW = 120;
       const mapH = 60;
       const mx = W - mapW - 14;
-      const my = this.onEscape ? 56 : 14;
+      const my = this.onSettingsOpen ? 56 : 14;
       const scaleX = mapW / CFG.WORLD_WIDTH;
       const scaleY = mapH / CFG.WORLD_HEIGHT;
 

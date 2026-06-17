@@ -44,6 +44,18 @@
       color: rgba(255,255,255,0.25); font: 12px system-ui, sans-serif;
       pointer-events: none;
     }
+    #settingsBtn {
+      position: fixed; top: 14px; right: 16px; z-index: 100;
+      display: none; gap: 6px; align-items: center;
+      padding: 8px 14px 8px 12px;
+      border: 1px solid rgba(78, 205, 196, 0.5);
+      border-radius: 10px; background: rgba(13, 13, 20, 0.92);
+      color: #e8e8f0; font: 600 13px system-ui, sans-serif; cursor: pointer;
+      box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5);
+    }
+    #settingsBtn .gear { font-size: 1.15rem; line-height: 1; }
+    #settingsBtn:hover { border-color: #4ecdc4; color: #4ecdc4; }
+    #settingsBtn.visible { display: flex; }
     #settingsPanel {
       position: fixed; inset: 0; z-index: 200;
       display: none; align-items: center; justify-content: center;
@@ -102,6 +114,10 @@
       <button id="playBtn" style="display:none" type="button">▶ Play</button>
     </div>
   </div>
+  <button id="settingsBtn" type="button" title="Settings (Esc)" aria-label="Settings">
+    <span class="gear" aria-hidden="true">⚙</span>
+    <span>Settings</span>
+  </button>
   <div id="settingsPanel" role="dialog" aria-labelledby="settingsTitle" aria-modal="true">
     <div class="settings-card">
       <h2 id="settingsTitle">Settings</h2>
@@ -124,6 +140,7 @@
     const playBtn = document.getElementById('playBtn');
     const titleEl = document.getElementById('title');
     const hudEl = document.getElementById('hud');
+    const settingsBtn = document.getElementById('settingsBtn');
     const settingsPanel = document.getElementById('settingsPanel');
     const playersToggleBtn = document.getElementById('playersToggleBtn');
     const resetBtn = document.getElementById('resetBtn');
@@ -162,30 +179,13 @@
     updateHudText();
     updatePlayersButton();
 
-    function handleEscape() {
-      if (settingsPanel.classList.contains('open')) {
-        closeSettings();
-        return;
-      }
-      if (!inGame || !engine) return;
-      openSettings();
-    }
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      if (!inGame || !engine) return;
-      if (engine.computerMode) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      handleEscape();
-    }, true);
-
     function openSettings() {
-      if (engine && engine.isRunning) {
+      if (!engine) return;
+      if (engine.isRunning) {
         engine.stop();
         engine._settingsPaused = true;
       }
-      if (engine && engine.keys) {
+      if (engine.keys) {
         for (const k of Object.keys(engine.keys)) engine.keys[k] = false;
       }
       settingsPanel.classList.add('open');
@@ -197,15 +197,41 @@
       if (engine && engine._settingsPaused) {
         engine._settingsPaused = false;
         engine.start();
+        document.getElementById('game').focus();
       }
     }
+
+    function toggleSettings() {
+      if (settingsPanel.classList.contains('open')) {
+        closeSettings();
+        return;
+      }
+      if (inGame && engine) openSettings();
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' && e.code !== 'Escape') return;
+      if (settingsPanel.classList.contains('open')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        closeSettings();
+        return;
+      }
+      if (!inGame || !engine) return;
+      if (engine.computerMode) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openSettings();
+    }, true);
 
     function restartGame() {
       if (!pendingRuntime) return;
       settingsPanel.classList.remove('open');
       if (engine) {
         engine._settingsPaused = false;
-        engine.stop();
+        if (engine.destroy) engine.destroy();
+        else engine.stop();
+        engine = null;
       }
       startGame(pendingRuntime);
     }
@@ -241,18 +267,23 @@
     function startGame(runtime) {
       window.DEEPIRI_DEFAULTS = runtime.defaults;
       loadEngineScript().then(() => {
-        if (engine && engine.stop) engine.stop();
+        if (engine) {
+          if (engine.destroy) engine.destroy();
+          else engine.stop();
+          engine = null;
+        }
         const canvas = document.getElementById('game');
         engine = new window.InteractiveWorld.WorldEngine(canvas, {
           interactive: true,
           playerCount,
-          onEscape: handleEscape
+          onSettingsOpen: openSettings
         });
         if (engine.applyWorldConfig) engine.applyWorldConfig(runtime.apply);
         engine.start();
         canvas.focus();
         titleEl.textContent = runtime.meta.name;
         overlay.classList.add('hide');
+        settingsBtn.classList.add('visible');
         inGame = true;
       }).catch((e) => {
         errEl.textContent = e.message;
@@ -283,6 +314,7 @@
       if (pendingRuntime) startGame(pendingRuntime);
     });
 
+    settingsBtn.addEventListener('click', toggleSettings);
     playersToggleBtn.addEventListener('click', cyclePlayers);
     closeSettingsBtn.addEventListener('click', closeSettings);
     resetBtn.addEventListener('click', resetGame);
