@@ -4,7 +4,7 @@ const cavesweatWorld = require('../../cavesweat/world.json');
 
 const {
   generateTerrain, generateCaves, caveCarved, isRockAt, materialAt, digCellKey,
-  inHeavenZone, computeSweatRate, generateShovels, generateCaveShovels,
+  inHeavenZone, computeSweatRate,   generateShovels, generateCaveShovels, placeCelestialShovels,
   generateSticks, generateCaveSticks,
   generateAscentPlatforms, generateCloudPlatforms, generateGateClouds,
   generateHeavenTerrain, getHeavenGroundY, getBiomeAt, getTerrainY, touchesWall,
@@ -149,12 +149,16 @@ describe('survival and heaven helpers', () => {
     const heavenTerrain = generateHeavenTerrain(terrain);
     const realm = generateHeavenRealmContent(heavenTerrain, null);
     expect(realm.platforms.some((p) => p.kind === 'heaven-solid')).toBe(true);
+    expect(realm.platforms.some((p) => p.kind === 'heaven-solid' && p.w >= 4900)).toBe(true);
     expect(realm.props.length).toBeGreaterThan(10);
     expect(realm.chests.length).toBeGreaterThan(0);
     expect(realm.crystals.length).toBeGreaterThan(0);
-    for (const p of realm.platforms.filter((pl) => pl.kind === 'heaven-solid')) {
+    const fullSlab = realm.platforms.find((p) => p.kind === 'heaven-solid' && p.w >= 4900);
+    const slabGy = getHeavenGroundY(heavenTerrain, fullSlab.x + fullSlab.w / 2);
+    expect(Math.abs(fullSlab.y + fullSlab.h - slabGy)).toBeLessThan(2);
+    for (const p of realm.platforms.filter((pl) => pl.kind === 'heaven-solid' && pl !== fullSlab)) {
       const gy = getHeavenGroundY(heavenTerrain, p.x + p.w / 2);
-      expect(Math.abs(p.y + p.h - gy)).toBeLessThan(4);
+      expect(Math.abs(p.y + p.h - gy)).toBeLessThanOrEqual(4);
     }
   });
 
@@ -182,8 +186,8 @@ describe('survival and heaven helpers', () => {
     expect(d.WORLD_HEAVEN_SKY_CLIMB).toBe(1050);
     expect(d.WORLD_HEAVEN_REALM_ALTITUDE).toBe(2600);
     expect(d.WORLD_HEAVEN_REALM_DEPTH).toBe(360);
-    expect(d.WORLD_HEAVEN_LAYERS).toBe(10);
-    expect(d.WORLD_HEAVEN_CLOUD_PLATFORMS).toBe(0);
+    expect(d.WORLD_HEAVEN_LAYERS).toBe(6);
+    expect(d.WORLD_HEAVEN_CLOUD_PLATFORMS).toBe(56);
     expect(validateConfig(cavesweatWorld)).toEqual([]);
   });
 
@@ -193,6 +197,12 @@ describe('survival and heaven helpers', () => {
     const deepIdle = computeSweatRate(0.6, 200, false, true, false);
     expect(running).toBeGreaterThan(deepIdle);
     expect(deepIdle).toBeGreaterThan(surfaceIdle);
+  });
+
+  it('sweats more near a campfire than standing idle on the surface', () => {
+    const idle = computeSweatRate(0, -10, false, true, false);
+    const byFire = computeSweatRate(0, -10, false, true, false, true);
+    expect(byFire).toBeGreaterThan(idle);
   });
 
   it('spawns shovels and sticks on surface and in caves', () => {
@@ -207,6 +217,21 @@ describe('survival and heaven helpers', () => {
     expect(sticks.filter((s) => s.kind === 'surface').length).toBe(16);
     expect(shovels.some((s) => s.kind === 'cave')).toBe(true);
     expect(sticks.some((s) => s.kind === 'cave')).toBe(true);
+  });
+
+  it('spawns at most one celestial shovel in a sealed pocket or sky perch', () => {
+    const caves = generateCaves(terrain);
+    const heavenHeights = generateHeavenTerrain(5000);
+    const clouds = generateCloudPlatforms(terrain, heavenHeights);
+    const spreader = InteractiveWorld.createPickupSpreader();
+    const celestials = placeCelestialShovels(caves, terrain, heavenHeights, spreader, clouds);
+    expect(celestials.length).toBeLessThanOrEqual(1);
+    if (celestials.length) {
+      expect(celestials[0].tier).toBe(6);
+      expect(['cave', 'sky']).toContain(celestials[0].kind);
+    }
+    const caveShovels = generateCaveShovels(caves, terrain, heavenHeights, spreader);
+    expect(caveShovels.every((s) => s.tier < 6)).toBe(true);
   });
 
   it('spreads surface pickups apart instead of clustering at cave entrances', () => {

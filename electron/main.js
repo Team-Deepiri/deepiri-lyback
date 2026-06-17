@@ -103,6 +103,13 @@ ipcMain.handle('desktop:list', async () => {
     const entries = await fs.promises.readdir(DESKTOP_DIR, { withFileTypes: true });
     return entries
       .filter((e) => !e.name.startsWith('.'))
+      .sort((a, b) => {
+        const aDir = a.isDirectory();
+        const bDir = b.isDirectory();
+        if (aDir !== bDir) return aDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 30)
       .map((e) => ({
         name: e.name,
         path: path.join(DESKTOP_DIR, e.name),

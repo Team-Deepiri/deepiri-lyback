@@ -25,6 +25,7 @@ const DEFAULT_WORLD = {
     particles: 60,
     shovelsSurface: 12,
     shovelsCave: 8,
+    celestialShovels: 1,
     sticksSurface: 16,
     sticksCave: 12
   },
@@ -41,9 +42,9 @@ const DEFAULT_WORLD = {
     skyClimb: 1050,
     realmAltitude: 2600,
     realmDepth: 360,
-    layers: 10,
-    ascentPlatforms: 55,
-    cloudPlatforms: 0,
+    layers: 6,
+    ascentPlatforms: 38,
+    cloudPlatforms: 56,
     trees: 16,
     props: 28,
     chests: 6,
@@ -96,6 +97,7 @@ function configToDefaults(config = {}) {
     WORLD_PARTICLE_COUNT: e.particles,
     WORLD_SHOVELS_SURFACE: e.shovelsSurface,
     WORLD_SHOVELS_CAVE: e.shovelsCave,
+    WORLD_CELESTIAL_SHOVELS: e.celestialShovels,
     WORLD_STICKS_SURFACE: e.sticksSurface,
     WORLD_STICKS_CAVE: e.sticksCave,
     WORLD_CAVE_ENABLED: c.enabled !== false,
@@ -187,6 +189,7 @@ function validateConfig(config) {
     ['entities.particles', e.particles, 0, 300],
     ['entities.shovelsSurface', e.shovelsSurface, 0, 40],
     ['entities.shovelsCave', e.shovelsCave, 0, 40],
+    ['entities.celestialShovels', e.celestialShovels, 0, 3],
     ['entities.sticksSurface', e.sticksSurface, 0, 60],
     ['entities.sticksCave', e.sticksCave, 0, 60]
   ];
