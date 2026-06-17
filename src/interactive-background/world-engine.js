@@ -1674,7 +1674,7 @@ const InteractiveWorld = (() => {
       this.trinkets = 0;
     }
 
-    tryJump(keys) {
+    tryJump(_keys) {
       if (this.wallSide !== 0) {
         this.vy = CFG.JUMP_FORCE * 0.92;
         this.vx = -this.wallSide * CFG.WALL_KICK_SPEED;
@@ -1712,7 +1712,7 @@ const InteractiveWorld = (() => {
 
       if (this._wallJumpIgnore > 0) this._wallJumpIgnore--;
 
-      const jumpKey = keys.jump != null ? keys.jump : (keys.up || keys.w || keys.space);
+      const jumpKey = keys.jump ?? (keys.up || keys.w || keys.space);
       if (keys.jumpPressed) {
         if (!this.tryJump(keys)) this._jumpBuffer = CFG.JUMP_BUFFER_FRAMES;
       } else if (jumpKey && !this._jumpHeld) {
@@ -2012,9 +2012,7 @@ const InteractiveWorld = (() => {
       this.mode = options.mode || 'world';
       this.interactive = options.interactive !== false;
       this.twoPlayer = options.twoPlayer === true;
-      const rawCount = options.playerCount != null
-        ? options.playerCount
-        : (this.twoPlayer ? 2 : 1);
+      const rawCount = options.playerCount ?? (this.twoPlayer ? 2 : 1);
       this.playerCount = Math.min(4, Math.max(1, rawCount | 0));
       this.onEscape = options.onEscape || null;
       this.onSettingsOpen = options.onSettingsOpen || options.onEscape || null;
@@ -2406,7 +2404,7 @@ const InteractiveWorld = (() => {
         return;
       }
       if (key === ']') { if (down) e.preventDefault(); this._setMultiKey('p3dig', down); return; }
-      if (key === '[') { if (down) e.preventDefault(); this._setMultiKey('p3rub', down); return; }
+      if (key === '[') { if (down) e.preventDefault(); this._setMultiKey('p3rub', down); }
     }
 
     nearestPlayer(x, y) {
@@ -2545,7 +2543,7 @@ const InteractiveWorld = (() => {
     _pickupShovel(pl, shovel, replacing = false) {
       shovel.taken = true;
       pl.hasShovel = true;
-      pl.shovelTier = shovel.tier != null ? shovel.tier : 0;
+      pl.shovelTier = shovel.tier ?? 0;
       const td = SHOVEL_TIERS[pl.shovelTier] || SHOVEL_TIERS[0];
       pl.maxShovelDurability = td.durability;
       pl.shovelDurability = td.durability;
@@ -3747,7 +3745,7 @@ const InteractiveWorld = (() => {
         if (s.taken) continue;
         const sx = s.x - cx, sy = s.y - cy + Math.sin(s.bob) * 3;
         if (sx < -30 || sx > W + 30 || sy < -30 || sy > H + 30) continue;
-        const td = SHOVEL_TIERS[s.tier != null ? s.tier : 0] || SHOVEL_TIERS[0];
+        const td = SHOVEL_TIERS[s.tier ?? 0] || SHOVEL_TIERS[0];
         ctx.save();
         // glow
         ctx.shadowColor = td.glowColor;
@@ -4362,7 +4360,7 @@ const InteractiveWorld = (() => {
       }
       if (shovelSwap) {
         const cur = SHOVEL_TIERS[shovelSwap.pl.shovelTier] || SHOVEL_TIERS[0];
-        const next = SHOVEL_TIERS[shovelSwap.shovel.tier != null ? shovelSwap.shovel.tier : 0] || SHOVEL_TIERS[0];
+        const next = SHOVEL_TIERS[shovelSwap.shovel.tier ?? 0] || SHOVEL_TIERS[0];
         ctx.fillStyle = next.glowColor;
         ctx.font = 'bold 13px monospace';
         ctx.fillText(`[E] Replace ${cur.name} with ${next.name}`, 14, hudY);

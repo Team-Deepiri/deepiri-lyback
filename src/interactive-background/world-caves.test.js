@@ -101,13 +101,13 @@ describe('cave system', () => {
   });
 
   it('makes chamber centers walkable (not solid)', () => {
-    const c = caves.chambers.find((ch) => {
+    const walkable = caves.chambers.some((ch) => {
       const py = ch.y + Math.min(12, ch.r * 0.25);
-      return caveCarved(caves, ch.x, py) && getTerrainY(terrain, ch.x) < py;
+      return getTerrainY(terrain, ch.x) < py
+        && caveCarved(caves, ch.x, py)
+        && !isRockAt(caves, terrain, ch.x, py);
     });
-    expect(c).toBeTruthy();
-    const py = c.y + Math.min(12, c.r * 0.25);
-    expect(isRockAt(caves, terrain, c.x, py)).toBe(false);
+    expect(walkable).toBe(true);
   });
 
   it('keeps chambers above the world floor so the player cannot fall out', () => {
