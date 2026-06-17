@@ -32,8 +32,23 @@ function wslToWindowsPath(wslPath) {
   return match[1].toUpperCase() + ':\\' + match[2].replace(/\//g, '\\');
 }
 
+// Reject cmd metacharacters so a path cannot break out of execFile argv.
+function isSafeWindowsPath(winPath) {
+  if (typeof winPath !== 'string' || !winPath) return false;
+  return /^[A-Za-z]:\\(?:[^"&|<>^%;\r\n]+\\)*[^"&|<>^%;\r\n]*$/.test(winPath);
+}
+
+function isSafeWslMountPath(wslPath) {
+  return /^\/mnt\/[a-z]\/(?:[^/&|<>^%;\0]+\/)*[^/&|<>^%;\0]*$/i.test(String(wslPath));
+}
+
 function readWindowsUserProfile() {
-  const raw = execFileSync('cmd.exe', ['/c', 'echo', '%USERPROFILE%'], {
+  const raw = execFileSync('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    "[Environment]::GetFolderPath('UserProfile')",
+  ], {
     encoding: 'utf8',
     timeout: 5000,
   });
@@ -77,9 +92,15 @@ function openDesktopPath(target) {
   }
 
   if (isWSL() && resolved.startsWith('/mnt/')) {
+    if (!isSafeWslMountPath(resolved)) {
+      return Promise.resolve('Refused: invalid path');
+    }
     const winPath = wslToWindowsPath(resolved);
+    if (!isSafeWindowsPath(winPath)) {
+      return Promise.resolve('Refused: invalid path');
+    }
     return new Promise((resolve) => {
-      execFile('cmd.exe', ['/c', 'start', '', winPath], { timeout: 10000 }, (err) => {
+      execFile('explorer.exe', [winPath], { timeout: 10000 }, (err) => {
         resolve(err ? String(err.message || err) : '');
       });
     });
@@ -97,6 +118,8 @@ module.exports = {
   isWSL,
   windowsToWslPath,
   wslToWindowsPath,
+  isSafeWindowsPath,
+  isSafeWslMountPath,
   getDesktopDir,
   isPathInsideDir,
   openDesktopPath,

@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cavesweat</title>
+  <script>
+    // /cavesweat (no slash) makes relative fetches hit the repo root — normalize first.
+    (function () {
+      if (location.protocol === 'file:') return;
+      const leaf = location.pathname.split('/').pop() || '';
+      const looksLikeFile = /\.[a-z0-9]+$/i.test(leaf);
+      if (location.pathname && !location.pathname.endsWith('/') && !looksLikeFile) {
+        location.replace(location.pathname + '/' + location.search + location.hash);
+      }
+    })();
+  </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #07070d; }
@@ -314,11 +325,35 @@
       restartGame();
     }
 
+    function pageDir() {
+      let path = location.pathname;
+      if (!path.endsWith('/')) {
+        const leaf = path.split('/').pop() || '';
+        path = /\.[a-z0-9]+$/i.test(leaf)
+          ? path.replace(/[^/]+$/, '')
+          : path + '/';
+      }
+      return new URL(path, location.origin).href;
+    }
+
+    function resolveCavesweatUrl(relative) {
+      return new URL(relative, pageDir()).href;
+    }
+
     async function loadWorldConfig() {
+      if (location.protocol === 'file:') {
+        throw new Error('file:// cannot load world.json');
+      }
       const params = new URLSearchParams(location.search);
       const configPath = params.get('config') || 'world.json';
-      const res = await fetch(configPath);
-      if (!res.ok) throw new Error(`Could not load ${configPath}`);
+      const configUrl = resolveCavesweatUrl(configPath);
+      let res;
+      try {
+        res = await fetch(configUrl);
+      } catch {
+        throw new Error(`Network error loading ${configPath}`);
+      }
+      if (!res.ok) throw new Error(`Could not load ${configPath} (${res.status})`);
       return JSON.parse(await res.text());
     }
 
@@ -326,7 +361,7 @@
       return new Promise((resolve, reject) => {
         if (window.InteractiveWorld?.WorldEngine) { resolve(); return; }
         const s = document.createElement('script');
-        s.src = '/src/interactive-background/world-engine.js';
+        s.src = resolveCavesweatUrl('../src/interactive-background/world-engine.js');
         s.onload = () => {
           if (!window.InteractiveWorld?.WorldEngine) {
             reject(new Error('World engine loaded but did not initialize — hard refresh (Ctrl+Shift+R).'));
@@ -382,8 +417,19 @@
         // Auto-start when launched from npm (no click needed after first paint)
         if (!location.search.includes('menu=1')) startGame(pendingRuntime);
       } catch (e) {
-        errEl.textContent = e.message || 'Failed to load world.json';
-        descEl.textContent = 'Edit cavesweat/world.json to customize your world.';
+        const msg = e.message || 'Failed to load world.json';
+        const needsServer = location.protocol === 'file:'
+          || /network error/i.test(msg)
+          || e.name === 'TypeError';
+        if (needsServer) {
+          errEl.textContent = location.protocol === 'file:'
+            ? 'Open Cavesweat through the dev server, not as a file.'
+            : 'Cannot reach world.json — is the server running?';
+          descEl.textContent = 'Run: cd cavesweat && npm start — then open http://localhost:3456/cavesweat/';
+        } else {
+          errEl.textContent = msg;
+          descEl.textContent = 'Edit cavesweat/world.json to customize your world.';
+        }
       }
     }
 

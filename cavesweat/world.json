@@ -40,6 +40,11 @@
     "ascentPlatforms": 55,
     "cloudPlatforms": 0,
     "trees": 16,
+    "props": 28,
+    "chests": 6,
+    "crystals": 10,
+    "items": 24,
+    "creatures": 10,
     "freezeRate": 0.12
   },
   "survival": {

@@ -8,6 +8,7 @@ const {
   generateSticks, generateCaveSticks,
   generateAscentPlatforms, generateCloudPlatforms, generateGateClouds,
   generateHeavenTerrain, getHeavenGroundY, getBiomeAt, getTerrainY, touchesWall,
+  generateHeavenRealmContent,
   generateCheckpoints, generateMapItems, layoutCaveProps, roomFloorY, roomCeilingY
 } = InteractiveWorld;
 
@@ -133,6 +134,28 @@ describe('survival and heaven helpers', () => {
     const hgY = getHeavenGroundY(heavenTerrain, 500);
     expect(isRockAt(null, terrain, 500, hgY + 10, heavenTerrain)).toBe(true);
     expect(isRockAt(null, terrain, 500, hgY - 30, heavenTerrain)).toBe(false);
+  });
+
+  it('heaven ground is flat constant solid terrain', () => {
+    const heavenTerrain = generateHeavenTerrain(terrain);
+    const y0 = getHeavenGroundY(heavenTerrain, 200);
+    const y1 = getHeavenGroundY(heavenTerrain, 2500);
+    const y2 = getHeavenGroundY(heavenTerrain, 4800);
+    expect(Math.abs(y0 - y1)).toBeLessThan(1);
+    expect(Math.abs(y1 - y2)).toBeLessThan(1);
+  });
+
+  it('fills heaven realm with solid-map props and loot', () => {
+    const heavenTerrain = generateHeavenTerrain(terrain);
+    const realm = generateHeavenRealmContent(heavenTerrain, null);
+    expect(realm.platforms.some((p) => p.kind === 'heaven-solid')).toBe(true);
+    expect(realm.props.length).toBeGreaterThan(10);
+    expect(realm.chests.length).toBeGreaterThan(0);
+    expect(realm.crystals.length).toBeGreaterThan(0);
+    for (const p of realm.platforms.filter((pl) => pl.kind === 'heaven-solid')) {
+      const gy = getHeavenGroundY(heavenTerrain, p.x + p.w / 2);
+      expect(Math.abs(p.y + p.h - gy)).toBeLessThan(4);
+    }
   });
 
   it('reports surface biome below heaven realm', () => {

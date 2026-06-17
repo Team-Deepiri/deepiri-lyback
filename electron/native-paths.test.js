@@ -1,4 +1,7 @@
-const { windowsToWslPath, wslToWindowsPath, isPathInsideDir } = require('./native-paths');
+const {
+  windowsToWslPath, wslToWindowsPath, isPathInsideDir,
+  isSafeWindowsPath, isSafeWslMountPath,
+} = require('./native-paths');
 
 describe('native-paths', () => {
   it('converts Windows paths to WSL mount paths', () => {
@@ -15,5 +18,17 @@ describe('native-paths', () => {
     const root = '/mnt/c/Users/alice/Desktop';
     expect(isPathInsideDir('/mnt/c/Users/alice/Desktop/note.txt', root)).toBe(true);
     expect(isPathInsideDir('/mnt/c/Users/alice/Documents/x', root)).toBe(false);
+  });
+
+  it('rejects Windows paths with shell metacharacters', () => {
+    expect(isSafeWindowsPath('C:\\Users\\alice\\Desktop\\note.txt')).toBe(true);
+    expect(isSafeWindowsPath('C:\\Users\\alice\\Desktop\\evil & calc.exe')).toBe(false);
+    expect(isSafeWindowsPath('C:\\Users\\alice\\Desktop\\evil|calc')).toBe(false);
+  });
+
+  it('rejects malformed WSL mount paths', () => {
+    expect(isSafeWslMountPath('/mnt/c/Users/alice/Desktop/note.txt')).toBe(true);
+    expect(isSafeWslMountPath('/mnt/c/Users/alice/Desktop/evil & calc')).toBe(false);
+    expect(isSafeWslMountPath('/tmp/outside')).toBe(false);
   });
 });

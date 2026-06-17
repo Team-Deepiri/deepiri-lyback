@@ -45,6 +45,11 @@ const DEFAULT_WORLD = {
     ascentPlatforms: 55,
     cloudPlatforms: 0,
     trees: 16,
+    props: 28,
+    chests: 6,
+    crystals: 10,
+    items: 24,
+    creatures: 10,
     freezeRate: 0.12
   },
   survival: {
@@ -107,6 +112,11 @@ function configToDefaults(config = {}) {
     WORLD_HEAVEN_CLOUD_PLATFORMS: h.cloudPlatforms,
     WORLD_HEAVEN_LAYERS: h.layers,
     WORLD_HEAVEN_TREES: h.trees,
+    WORLD_HEAVEN_PROPS: h.props,
+    WORLD_HEAVEN_CHESTS: h.chests,
+    WORLD_HEAVEN_CRYSTALS: h.crystals,
+    WORLD_HEAVEN_ITEMS: h.items,
+    WORLD_HEAVEN_CREATURES: h.creatures,
     WORLD_HEAVEN_FREEZE_RATE: h.freezeRate,
     WORLD_SURVIVAL_RUN_SWEAT_MULT: s.runSweatMult,
     WORLD_SURVIVAL_SURFACE_IDLE_SWEAT: s.surfaceIdleSweat,

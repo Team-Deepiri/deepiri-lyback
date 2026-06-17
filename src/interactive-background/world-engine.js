@@ -39,6 +39,11 @@ const InteractiveWorld = (() => {
     HEAVEN_CLOUD_PLATFORMS: DEFAULTS.WORLD_HEAVEN_CLOUD_PLATFORMS ?? 0,
     HEAVEN_LAYERS: DEFAULTS.WORLD_HEAVEN_LAYERS ?? 6,
     HEAVEN_TREES: DEFAULTS.WORLD_HEAVEN_TREES ?? 10,
+    HEAVEN_PROPS: DEFAULTS.WORLD_HEAVEN_PROPS ?? 28,
+    HEAVEN_CHESTS: DEFAULTS.WORLD_HEAVEN_CHESTS ?? 6,
+    HEAVEN_CRYSTALS: DEFAULTS.WORLD_HEAVEN_CRYSTALS ?? 10,
+    HEAVEN_ITEMS: DEFAULTS.WORLD_HEAVEN_ITEMS ?? 24,
+    HEAVEN_CREATURES: DEFAULTS.WORLD_HEAVEN_CREATURES ?? 10,
     HEAVEN_FREEZE_RATE: DEFAULTS.WORLD_HEAVEN_FREEZE_RATE ?? 0.12,
     ASCENT_STEP_Y: 46,
     SURVIVAL_RUN_SWEAT_MULT: DEFAULTS.WORLD_SURVIVAL_RUN_SWEAT_MULT ?? 1.8,
@@ -99,14 +104,10 @@ const InteractiveWorld = (() => {
 
   function generateHeavenTerrain(surfaceHeights) {
     const h = new Float32Array(SEGMENTS + 1);
+    const refSurf = getTerrainY(surfaceHeights, CFG.WORLD_WIDTH * 0.5);
+    const heavenY = refSurf - CFG.HEAVEN_REALM_ALTITUDE;
     for (let i = 0; i <= SEGMENTS; i++) {
-      const x = (i / SEGMENTS) * CFG.WORLD_WIDTH;
-      const surf = getTerrainY(surfaceHeights, x);
-      let wobble = Math.sin(x * 0.0016) * 55;
-      wobble += Math.sin(x * 0.0042) * 28;
-      wobble += Math.sin(x * 0.0095) * 12;
-      wobble += Math.sin(x * 0.019) * 6;
-      h[i] = surf - CFG.HEAVEN_REALM_ALTITUDE + wobble;
+      h[i] = heavenY;
     }
     return h;
   }
@@ -269,25 +270,28 @@ const InteractiveWorld = (() => {
     return platforms;
   }
 
-  // Final cloud hops through the abyss up to the solid heaven realm.
+  // Final cloud hops through the abyss — stop well above the solid heaven floor.
   function generateGateClouds(platforms, heights, heavenHeights, maxClouds) {
     if (!heavenHeights) return;
+    const landingClearance = 160;
     const cols = Math.max(14, Math.floor(CFG.WORLD_WIDTH / 340));
     for (let i = 0; i < cols && platforms.length < maxClouds; i++) {
       const gx = 120 + i * ((CFG.WORLD_WIDTH - 240) / Math.max(1, cols - 1));
       const skyTop = skyBaseAt(heights, gx) - CFG.HEAVEN_SKY_CLIMB + 50;
       const hgY = getHeavenGroundY(heavenHeights, gx);
-      const abyss = skyTop - hgY;
-      if (abyss < 80) continue;
-      const steps = Math.max(5, Math.ceil(abyss / 92));
+      const abyssTop = skyTop;
+      const abyssBottom = hgY - landingClearance;
+      const abyss = abyssTop - abyssBottom;
+      if (abyss < 120) continue;
+      const steps = Math.max(5, Math.ceil(abyss / 96));
       for (let s = 0; s < steps && platforms.length < maxClouds; s++) {
         const t = (s + 0.55) / steps;
-        const py = skyTop - t * abyss + (Math.random() - 0.5) * 18;
+        const py = abyssTop - t * abyss + (Math.random() - 0.5) * 16;
+        if (py > abyssBottom - 20) continue;
         const w = 82 + Math.random() * 48;
         const ox = (s % 2 === 0 ? -1 : 1) * (22 + Math.random() * 28);
         addCloudPlatform(platforms, gx - w / 2 + ox, py, w);
       }
-      addCloudPlatform(platforms, gx - 64, hgY - 58, 128 + Math.random() * 40);
     }
   }
 
@@ -308,6 +312,107 @@ const InteractiveWorld = (() => {
       });
     }
     return trees;
+  }
+
+  // Solid heaven map content — paths, props, loot (clouds are ascent-only).
+  function generateHeavenRealmContent(heavenHeights, spreader) {
+    const empty = { platforms: [], props: [], chests: [], crystals: [] };
+    if (!CFG.HEAVEN_ENABLED || !heavenHeights) return empty;
+
+    const platforms = [];
+    const props = [];
+    const chests = [];
+    const crystals = [];
+    const groundY = (x) => getHeavenGroundY(heavenHeights, x);
+    const propKinds = ['pillar', 'obelisk', 'fountain', 'shrine', 'arch', 'spire'];
+
+    const avenueSegs = Math.max(14, Math.floor(CFG.WORLD_WIDTH / 260));
+    for (let i = 0; i < avenueSegs; i++) {
+      const x = 100 + i * ((CFG.WORLD_WIDTH - 200) / Math.max(1, avenueSegs - 1));
+      const gy = groundY(x);
+      platforms.push({
+        x: x - 62, y: gy - 12, w: 124, h: 12,
+        color: '#fff4dc', kind: 'heaven-solid'
+      });
+    }
+
+    const gateCols = Math.max(10, Math.floor(CFG.WORLD_WIDTH / 380));
+    for (let i = 0; i < gateCols; i++) {
+      const gx = 140 + i * ((CFG.WORLD_WIDTH - 280) / Math.max(1, gateCols - 1));
+      const gy = groundY(gx);
+      platforms.push({
+        x: gx - 96, y: gy - 14, w: 192, h: 14,
+        color: '#ffe8b8', kind: 'heaven-solid'
+      });
+      props.push({
+        kind: 'gate', x: gx, baseY: gy,
+        height: 110 + Math.random() * 50, width: 18 + Math.random() * 10
+      });
+    }
+
+    for (let i = 0; i < CFG.HEAVEN_PROPS; i++) {
+      const x = 80 + Math.random() * (CFG.WORLD_WIDTH - 160);
+      const gy = groundY(x);
+      const kind = propKinds[Math.floor(Math.random() * propKinds.length)];
+      props.push({
+        kind, x, baseY: gy,
+        height: 50 + Math.random() * 90,
+        width: 10 + Math.random() * 14,
+        hue: 42 + Math.random() * 18,
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+
+    for (let i = 0; i < CFG.HEAVEN_CHESTS; i++) {
+      const x = spreader
+        ? spreader.bandX(i, CFG.HEAVEN_CHESTS, 160, 0.52)
+        : 160 + Math.random() * (CFG.WORLD_WIDTH - 320);
+      const gy = groundY(x);
+      if (spreader && !spreader.canPlace(x, gy - 18, PICKUP_SPREAD_MIN)) continue;
+      if (spreader) spreader.mark(x, gy - 18);
+      chests.push({
+        x, y: gy - 18,
+        open: false, pulse: Math.random() * Math.PI * 2,
+        loot: ['✨ Star Shard', '🪽 Wing Charm', '☀️ Sun Relic', '🌟 Halo'][Math.floor(Math.random() * 4)],
+        biome: 'heaven'
+      });
+    }
+
+    const heavenColors = ['#fff8e0', '#ffe8a0', '#e8f4ff', '#ffd479', '#ffffff', '#c8e8ff'];
+    for (let i = 0; i < CFG.HEAVEN_CRYSTALS; i++) {
+      const x = spreader
+        ? spreader.bandX(i, CFG.HEAVEN_CRYSTALS, 140, 0.58)
+        : 140 + Math.random() * (CFG.WORLD_WIDTH - 280);
+      const gy = groundY(x);
+      const y = gy - 30 - Math.random() * 40;
+      if (spreader && !spreader.canPlace(x, y, PICKUP_SPREAD_MIN)) continue;
+      if (spreader) spreader.mark(x, y);
+      crystals.push({
+        x, y,
+        size: 8 + Math.random() * 8,
+        color: heavenColors[Math.floor(Math.random() * heavenColors.length)],
+        phase: Math.random() * Math.PI * 2,
+        rot: Math.random() * Math.PI * 2,
+        floatOffset: Math.random() * Math.PI * 2
+      });
+    }
+
+    return { platforms, props, chests, crystals };
+  }
+
+  function spawnHeavenCreatures(worldWidth, heavenHeights) {
+    const list = [];
+    if (!CFG.HEAVEN_ENABLED || !heavenHeights) return list;
+    for (let i = 0; i < CFG.HEAVEN_CREATURES; i++) {
+      const c = new Creature(worldWidth, 800, null, Math.random() > 0.35 ? 'bird' : 'firefly');
+      c.x = 100 + Math.random() * (worldWidth - 200);
+      const gy = getHeavenGroundY(heavenHeights, c.x);
+      c.y = gy - 25 - Math.random() * 80;
+      c.color = c.type === 'firefly' ? '#ffe8a0' : '#fff8f0';
+      c.size = c.type === 'bird' ? 7 : 3;
+      list.push(c);
+    }
+    return list;
   }
 
   const MAP_ITEM_TYPES = [
@@ -455,10 +560,11 @@ const InteractiveWorld = (() => {
     }
 
     if (CFG.HEAVEN_ENABLED && heavenHeights) {
-      for (let i = 0; i < 10; i++) {
+      const heavenCount = CFG.HEAVEN_ITEMS;
+      for (let i = 0; i < heavenCount; i++) {
         const x = spreader
-          ? spreader.bandX(i, 10, 180, 0.55)
-          : 180 + Math.random() * (CFG.WORLD_WIDTH - 360);
+          ? spreader.bandX(i, heavenCount, 160, 0.58)
+          : 160 + Math.random() * (CFG.WORLD_WIDTH - 320);
         add(x, getHeavenGroundY(heavenHeights, x) - 10, PICKUP_SPREAD_MIN);
       }
       for (let i = 0; i < 6; i++) {
@@ -1972,15 +2078,19 @@ const InteractiveWorld = (() => {
       this.caves = generateCaves(this.terrain);
       const basePlatforms = generatePlatforms(this.terrain);
       this.heavenTerrain = generateHeavenTerrain(this.terrain);
+      const pickupSpread = createPickupSpreader();
       const ascentPlatforms = generateAscentPlatforms(this.terrain, this.caves.entrances);
       const cloudPlatforms = generateCloudPlatforms(this.terrain, this.heavenTerrain);
-      this.platforms = basePlatforms.concat(ascentPlatforms, cloudPlatforms);
+      const heavenRealm = generateHeavenRealmContent(this.heavenTerrain, pickupSpread);
+      this.platforms = basePlatforms.concat(ascentPlatforms, cloudPlatforms, heavenRealm.platforms);
       this.heavenTrees = generateHeavenTrees(this.heavenTerrain);
+      this.heavenProps = heavenRealm.props;
       this.portals = generatePortals(this.terrain);
-      const pickupSpread = createPickupSpreader();
       const surfacePlacer = createSurfacePickupPlacer(pickupSpread);
-      this.chests = generateChests(this.terrain, pickupSpread, surfacePlacer);
-      this.crystals = generateCrystals(this.terrain, pickupSpread, surfacePlacer);
+      this.chests = generateChests(this.terrain, pickupSpread, surfacePlacer)
+        .concat(heavenRealm.chests);
+      this.crystals = generateCrystals(this.terrain, pickupSpread, surfacePlacer)
+        .concat(heavenRealm.crystals);
       this.shovels = generateShovels(this.terrain, pickupSpread, surfacePlacer)
         .concat(generateCaveShovels(this.caves, this.terrain, this.heavenTerrain, pickupSpread));
       this.stickPickups = generateSticks(this.terrain, pickupSpread, surfacePlacer)
@@ -2008,6 +2118,9 @@ const InteractiveWorld = (() => {
       this.creatures = [];
       for (let i = 0; i < CFG.CREATURE_COUNT; i++) {
         this.creatures.push(new Creature(CFG.WORLD_WIDTH, CFG.WORLD_HEIGHT, this.terrain));
+      }
+      if (CFG.HEAVEN_ENABLED) {
+        this.creatures.push(...spawnHeavenCreatures(CFG.WORLD_WIDTH, this.heavenTerrain));
       }
 
       this.generateStars();
@@ -2843,6 +2956,7 @@ const InteractiveWorld = (() => {
       this.drawCaves(ctx, cx, cy, W, H);
       this.drawCaveItems(ctx, cx, cy, W, H);
       this.drawPlatforms(ctx, cx, cy, W, H);
+      this.drawHeavenProps(ctx, cx, cy, W, H);
       this.drawCrystals(ctx, cx, cy, W, H);
       this.drawChests(ctx, cx, cy, W, H);
       this.drawSticks(ctx, cx, cy, W, H);
@@ -3670,25 +3784,95 @@ const InteractiveWorld = (() => {
       for (let x = startX; x <= endX; x += step) {
         const ty = getHeavenGroundY(this.heavenTerrain, x);
         ctx.fillStyle = '#fff8f0';
-        ctx.fillRect(x - cx, ty - cy, step + 1, 6);
-        ctx.fillStyle = 'rgba(255,212,121,0.85)';
-        ctx.fillRect(x - cx, ty - cy, step + 1, 2);
-      }
-
-      for (let x = startX; x <= endX; x += step * 5) {
-        const ty = getHeavenGroundY(this.heavenTerrain, x) + depth * 0.3;
-        const sx = x - cx;
-        const sy = ty - cy + 24;
-        ctx.globalAlpha = 0.32;
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.ellipse(sx, sy, 58 + Math.sin(x * 0.008 + this.time * 0.5) * 14, 30, 0, 0, Math.PI * 2);
-        ctx.ellipse(sx + 36, sy + 10, 40, 22, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
+        ctx.fillRect(x - cx, ty - cy, step + 1, 8);
+        ctx.fillStyle = 'rgba(255,212,121,0.95)';
+        ctx.fillRect(x - cx, ty - cy, step + 1, 3);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(x - cx, ty - cy + 3, step + 1, 1);
       }
 
       ctx.restore();
+    }
+
+    drawHeavenProps(ctx, cx, cy, W, H) {
+      if (!this.heavenProps || !CFG.HEAVEN_ENABLED) return;
+      const surf = getTerrainY(this.terrain, cx + W / 2);
+      const heavenRef = surf - CFG.HEAVEN_REALM_ALTITUDE;
+      if (cy > heavenRef + CFG.HEAVEN_REALM_DEPTH + 200) return;
+
+      for (const p of this.heavenProps) {
+        const px = p.x - cx;
+        const baseY = p.baseY - cy;
+        if (px < -120 || px > W + 120 || baseY < -200 || baseY > H + 80) continue;
+        const h = p.height || 70;
+        const w = p.width || 12;
+        const gold = `hsl(${p.hue || 45}, 72%, ${58 + Math.sin(this.time * 0.04 + (p.phase || 0)) * 6}%)`;
+        ctx.save();
+
+        if (p.kind === 'arch' || p.kind === 'gate') {
+          ctx.strokeStyle = gold;
+          ctx.lineWidth = p.kind === 'gate' ? 5 : 4;
+          ctx.shadowColor = '#ffd479';
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.moveTo(px - w * 2.2, baseY);
+          ctx.lineTo(px - w * 2.2, baseY - h * 0.55);
+          ctx.quadraticCurveTo(px, baseY - h * 1.05, px + w * 2.2, baseY - h * 0.55);
+          ctx.lineTo(px + w * 2.2, baseY);
+          ctx.stroke();
+          if (p.kind === 'gate') {
+            ctx.fillStyle = 'rgba(255,248,220,0.25)';
+            ctx.fillRect(px - w * 2.2, baseY - h * 0.55, w * 4.4, h * 0.55);
+          }
+        } else if (p.kind === 'fountain') {
+          ctx.fillStyle = '#e8f4ff';
+          ctx.beginPath();
+          ctx.ellipse(px, baseY - 6, 28, 10, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = gold;
+          ctx.lineWidth = 3;
+          for (let i = 0; i < 3; i++) {
+            const ang = -Math.PI / 2 + (i - 1) * 0.35;
+            ctx.beginPath();
+            ctx.moveTo(px, baseY - 10);
+            ctx.quadraticCurveTo(
+              px + Math.cos(ang) * 20, baseY - 30 - i * 8,
+              px + Math.cos(ang) * 8, baseY - 42 - i * 12
+            );
+            ctx.stroke();
+          }
+        } else if (p.kind === 'shrine') {
+          ctx.fillStyle = gold;
+          ctx.fillRect(px - w, baseY - h * 0.35, w * 2, h * 0.35);
+          ctx.beginPath();
+          ctx.moveTo(px, baseY - h);
+          ctx.lineTo(px - w * 1.6, baseY - h * 0.35);
+          ctx.lineTo(px + w * 1.6, baseY - h * 0.35);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.beginPath();
+          ctx.arc(px, baseY - h * 0.55, w * 0.55, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.fillStyle = gold;
+          ctx.shadowColor = '#fff8e0';
+          ctx.shadowBlur = p.kind === 'spire' ? 16 : 8;
+          if (p.kind === 'obelisk') {
+            ctx.beginPath();
+            ctx.moveTo(px, baseY - h);
+            ctx.lineTo(px - w * 0.7, baseY);
+            ctx.lineTo(px + w * 0.7, baseY);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            ctx.fillRect(px - w / 2, baseY - h, w, h);
+            ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.fillRect(px - w / 2 + 1, baseY - h + 4, 2, h - 8);
+          }
+        }
+        ctx.restore();
+      }
     }
 
     drawHeavenTrees(ctx, cx, cy, W, H) {
@@ -3726,11 +3910,12 @@ const InteractiveWorld = (() => {
       if (!CFG.HEAVEN_ENABLED) return;
       const surf = getTerrainY(this.terrain, cx + W / 2);
       const heavenRef = surf - CFG.HEAVEN_REALM_ALTITUDE;
-      if (cy < heavenRef - 60) {
+      // Inside the solid heaven realm — no parallax clouds, only warm ambient light.
+      if (this.heavenTerrain && cy <= heavenRef + CFG.HEAVEN_REALM_DEPTH + 120) {
         ctx.save();
-        ctx.globalAlpha = 0.14;
-        const glow = ctx.createRadialGradient(W * 0.5, H * 0.35, 0, W * 0.5, H * 0.35, W * 0.65);
-        glow.addColorStop(0, '#fff8e0');
+        ctx.globalAlpha = 0.22;
+        const glow = ctx.createRadialGradient(W * 0.5, H * 0.55, 0, W * 0.5, H * 0.55, W * 0.75);
+        glow.addColorStop(0, '#fff8e8');
         glow.addColorStop(1, 'transparent');
         ctx.fillStyle = glow;
         ctx.fillRect(0, 0, W, H);
@@ -3779,6 +3964,20 @@ const InteractiveWorld = (() => {
           ctx.beginPath();
           ctx.ellipse(px + plat.w * 0.35, pys + plat.h * 0.3, plat.w * 0.25, plat.h * 0.5, 0, 0, Math.PI * 2);
           ctx.fill();
+          ctx.restore();
+        } else if (plat.kind === 'heaven-solid') {
+          ctx.save();
+          const grad = ctx.createLinearGradient(px, pys, px, pys + plat.h);
+          grad.addColorStop(0, '#fffaf0');
+          grad.addColorStop(0.5, plat.color || '#fff4dc');
+          grad.addColorStop(1, '#e8d8b8');
+          ctx.fillStyle = grad;
+          ctx.fillRect(px, pys, plat.w, plat.h);
+          ctx.strokeStyle = 'rgba(255,212,121,0.65)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px + 0.5, pys + 0.5, plat.w - 1, plat.h - 1);
+          ctx.fillStyle = 'rgba(255,255,255,0.35)';
+          ctx.fillRect(px + 2, pys + 2, plat.w - 4, 2);
           ctx.restore();
         } else {
           ctx.fillStyle = plat.color;
@@ -4215,6 +4414,7 @@ const InteractiveWorld = (() => {
     materialAt, MATERIALS, digCellKey, DIG_CELL, inHeavenZone, computeSweatRate,
     generateShovels, generateCaveShovels, generateSticks, generateCaveSticks,
     generateAscentPlatforms, generateCloudPlatforms, generateGateClouds,
+    generateHeavenRealmContent, generateHeavenTrees, spawnHeavenCreatures,
     generateCheckpoints, generateMapItems, layoutCaveProps, roomFloorY, roomCeilingY,
     createPickupSpreader, createSurfacePickupPlacer, PICKUP_SPREAD_MIN, CAVE_PICKUP_SPREAD_MIN
   };
