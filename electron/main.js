@@ -7,17 +7,18 @@
  * tiny local HTTP server on an ephemeral port and load that URL — rather than
  * loading studio.html over file://, where same-origin XHR is restricted.
  */
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const nativePaths = require('./native-paths');
 
 const ROOT = path.join(__dirname, '..');
 const STUDIO_PATH = '/tools/wallpaper-studio/studio.html';
 const VIEWER_PATH = '/tools/wallpaper-studio/viewer.html';
-const DESKTOP_DIR = path.join(os.homedir(), 'Desktop');
+const DESKTOP_DIR = nativePaths.getDesktopDir();
 
 // When the app is opened with a .lyv (double-click / file association / CLI arg),
 // we route to the viewer and hand it the file. This holds the path until the
@@ -102,6 +103,13 @@ ipcMain.handle('desktop:list', async () => {
     const entries = await fs.promises.readdir(DESKTOP_DIR, { withFileTypes: true });
     return entries
       .filter((e) => !e.name.startsWith('.'))
+      .sort((a, b) => {
+        const aDir = a.isDirectory();
+        const bDir = b.isDirectory();
+        if (aDir !== bDir) return aDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 30)
       .map((e) => ({
         name: e.name,
         path: path.join(DESKTOP_DIR, e.name),
@@ -117,11 +125,7 @@ ipcMain.handle('desktop:list', async () => {
 // Desktop dir so a renderer can't ask us to open arbitrary paths.
 ipcMain.handle('shell:open', async (_e, target) => {
   try {
-    const resolved = path.resolve(String(target));
-    if (resolved !== DESKTOP_DIR && !resolved.startsWith(DESKTOP_DIR + path.sep)) {
-      return 'Refused: path is outside the Desktop folder';
-    }
-    return await shell.openPath(resolved);
+    return await nativePaths.openDesktopPath(target);
   } catch (err) {
     return String(err && err.message ? err.message : err);
   }
@@ -141,8 +145,9 @@ ipcMain.handle('term:start', (e) => {
   killShell(wc.id);
 
   const shellPath = process.env.SHELL || (process.platform === 'win32' ? 'cmd.exe' : '/bin/bash');
+  const cwd = nativePaths.getTerminalCwd();
   const child = spawn(shellPath, [], {
-    cwd: os.homedir(),
+    cwd,
     env: { ...process.env, TERM: 'dumb' },
   });
   shells.set(wc.id, child);
@@ -157,7 +162,12 @@ ipcMain.handle('term:start', (e) => {
     shells.delete(wc.id);
   });
 
-  return { cwd: os.homedir(), shell: shellPath };
+  return {
+    cwd,
+    shell: shellPath,
+    wsl: nativePaths.isWSL(),
+    desktop: DESKTOP_DIR,
+  };
 });
 
 ipcMain.on('term:input', (e, data) => {

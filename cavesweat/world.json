@@ -20,6 +20,7 @@
     "particles": 60,
     "shovelsSurface": 12,
     "shovelsCave": 8,
+    "celestialShovels": 1,
     "sticksSurface": 16,
     "sticksCave": 12
   },
@@ -32,11 +33,19 @@
   },
   "heaven": {
     "enabled": true,
-    "altitude": 280,
-    "skyHeight": 400,
-    "ascentPlatforms": 55,
-    "cloudPlatforms": 24,
-    "trees": 10,
+    "skyStart": 180,
+    "skyClimb": 1050,
+    "realmAltitude": 2600,
+    "realmDepth": 360,
+    "layers": 6,
+    "ascentPlatforms": 38,
+    "cloudPlatforms": 56,
+    "trees": 16,
+    "props": 28,
+    "chests": 6,
+    "crystals": 10,
+    "items": 24,
+    "creatures": 10,
     "freezeRate": 0.12
   },
   "survival": {

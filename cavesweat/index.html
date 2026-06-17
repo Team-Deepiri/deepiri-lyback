@@ -4,18 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cavesweat</title>
+  <script>
+    // /cavesweat (no slash) makes relative fetches hit the repo root — normalize first.
+    (function () {
+      if (location.protocol === 'file:') return;
+      const leaf = location.pathname.split('/').pop() || '';
+      const looksLikeFile = /\.[a-z0-9]+$/i.test(leaf);
+      if (location.pathname && !location.pathname.endsWith('/') && !looksLikeFile) {
+        location.replace(location.pathname + '/' + location.search + location.hash);
+      }
+    })();
+  </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #07070d; }
-    #game { position: fixed; inset: 0; width: 100%; height: 100%; }
+    #game { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; }
     #overlay {
-      position: fixed; inset: 0; z-index: 20;
+      position: fixed; inset: 0; z-index: 50;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 16px; color: #e8e8f0; font-family: system-ui, sans-serif; text-align: center;
       background: radial-gradient(ellipse at center, #0d0d14 0%, #07070d 100%);
       transition: opacity 0.35s;
     }
-    #overlay.hide { opacity: 0; pointer-events: none; }
+    #overlay.hide { opacity: 0; pointer-events: none; display: none; }
     .card {
       border: 1px solid rgba(78, 205, 196, 0.25);
       border-radius: 16px;
@@ -45,24 +56,21 @@
       pointer-events: none;
     }
     #settingsBtn {
-      position: fixed; top: 12px; right: 16px; z-index: 10;
-      display: none; width: 36px; height: 36px;
-      border: 1px solid rgba(78, 205, 196, 0.3);
-      border-radius: 8px; background: rgba(13, 13, 20, 0.75);
-      color: rgba(255,255,255,0.7); font-size: 1.1rem; cursor: pointer;
-      align-items: center; justify-content: center;
-      transition: border-color 0.15s, background 0.15s;
+      position: fixed; top: 14px; right: 16px; z-index: 1000;
+      display: none; gap: 6px; align-items: center;
+      padding: 8px 14px 8px 12px;
+      border: 1px solid rgba(78, 205, 196, 0.5);
+      border-radius: 10px; background: rgba(13, 13, 20, 0.92);
+      color: #e8e8f0; font: 600 13px system-ui, sans-serif; cursor: pointer;
+      box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5);
     }
-    #settingsBtn:hover {
-      border-color: rgba(78, 205, 196, 0.55);
-      background: rgba(13, 13, 20, 0.92);
-      color: #4ecdc4;
-    }
+    #settingsBtn .gear { font-size: 1.15rem; line-height: 1; }
+    #settingsBtn:hover { border-color: #4ecdc4; color: #4ecdc4; }
     #settingsBtn.visible { display: flex; }
     #settingsPanel {
-      position: fixed; inset: 0; z-index: 15;
+      position: fixed; inset: 0; z-index: 2000;
       display: none; align-items: center; justify-content: center;
-      background: rgba(7, 7, 13, 0.55);
+      background: rgba(7, 7, 13, 0.72);
     }
     #settingsPanel.open { display: flex; }
     .settings-card {
@@ -95,6 +103,51 @@
       color: #07070d;
     }
     .settings-actions .players-btn:hover { opacity: 0.92; }
+    .settings-actions .remove-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 107, 107, 0.45);
+      color: #ff9f9f;
+    }
+    .settings-actions .remove-btn:hover {
+      border-color: rgba(255, 107, 107, 0.75);
+      color: #ff6b6b;
+    }
+    .remove-picker {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .remove-picker[hidden] { display: none !important; }
+    .remove-picker .remove-label {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.5);
+      text-align: center;
+    }
+    .remove-slots {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+    .player-slot-btn {
+      min-width: 44px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 107, 107, 0.4);
+      background: rgba(255, 107, 107, 0.12);
+      color: #ffb4b4;
+      font: 600 0.85rem system-ui, sans-serif;
+      cursor: pointer;
+    }
+    .player-slot-btn:hover {
+      background: rgba(255, 107, 107, 0.28);
+      border-color: #ff6b6b;
+      color: #fff;
+    }
     .settings-actions .close-btn {
       background: transparent;
       border: 1px solid rgba(255,255,255,0.15);
@@ -117,13 +170,21 @@
       <button id="playBtn" style="display:none" type="button">▶ Play</button>
     </div>
   </div>
-  <button id="settingsBtn" type="button" title="Settings" aria-label="Settings">⚙</button>
+  <button id="settingsBtn" type="button" title="Settings (Esc)" aria-label="Settings">
+    <span class="gear" aria-hidden="true">⚙</span>
+    <span>Settings</span>
+  </button>
   <div id="settingsPanel" role="dialog" aria-labelledby="settingsTitle" aria-modal="true">
     <div class="settings-card">
       <h2 id="settingsTitle">Settings</h2>
-      <p class="sub">In-game options for this Cavesweat session.</p>
+      <p class="sub">Pause the game, change players, or reset the world.</p>
       <div class="settings-actions">
         <button id="playersToggleBtn" class="players-btn" type="button">👥 Add 2nd player</button>
+        <button id="removePlayerBtn" class="remove-btn" type="button" hidden>➖ Remove player</button>
+        <div id="removePlayerPicker" class="remove-picker" hidden>
+          <span class="remove-label">Which player should leave?</span>
+          <div id="removePlayerSlots" class="remove-slots"></div>
+        </div>
         <button id="resetBtn" class="reset-btn" type="button">↻ Reset world</button>
         <button id="closeSettingsBtn" class="close-btn" type="button">Close</button>
       </div>
@@ -133,7 +194,7 @@
 
   <script src="config.js"></script>
   <script>
-    const TWO_PLAYER_KEY = 'cavesweat-two-player';
+    const PLAYER_COUNT_KEY = 'cavesweat-player-count';
     const overlay = document.getElementById('overlay');
     const errEl = document.getElementById('err');
     const descEl = document.getElementById('desc');
@@ -143,51 +204,76 @@
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsPanel = document.getElementById('settingsPanel');
     const playersToggleBtn = document.getElementById('playersToggleBtn');
+    const removePlayerBtn = document.getElementById('removePlayerBtn');
+    const removePlayerPicker = document.getElementById('removePlayerPicker');
+    const removePlayerSlots = document.getElementById('removePlayerSlots');
     const resetBtn = document.getElementById('resetBtn');
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     let engine = null;
     let pendingRuntime = null;
-    let twoPlayerMode = localStorage.getItem(TWO_PLAYER_KEY) === '1';
+    let inGame = false;
+    let playerCount = Math.min(4, Math.max(1, parseInt(localStorage.getItem(PLAYER_COUNT_KEY) || '1', 10) || 1));
+
+    const PLAYER_NAMES = ['Sweaty', 'Grit', 'Bramble', 'Nimbus'];
+    const PLAYER_CONTROLS = ['WASD', 'Arrows', 'IJKL', 'Numpad'];
 
     function updateHudText() {
-      if (twoPlayerMode) {
-        hudEl.innerHTML = 'P1: WASD + Space (jump) &nbsp;|&nbsp; P2: Arrows (↑ jump) &nbsp;|&nbsp; F / . : Dig &nbsp;|&nbsp; R / , : Rub sticks &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; Esc: Settings';
-      } else {
-        hudEl.innerHTML = 'WASD / Arrows: Move &nbsp;|&nbsp; Space / W / ↑: Jump &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; R: Rub sticks &nbsp;|&nbsp; E: Interact &nbsp;|&nbsp; Esc: Settings';
-      }
+      const hints = {
+        1: 'WASD / Arrows: Move &nbsp;|&nbsp; Space / W / ↑: Jump &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; R: Rub &nbsp;|&nbsp; Esc or ⚙: Settings',
+        2: `${PLAYER_NAMES[0]}: WASD+Space/W &nbsp;|&nbsp; ${PLAYER_NAMES[1]}: Arrows+RCtrl (↑ jump) &nbsp;|&nbsp; Esc or ⚙: Settings`,
+        3: `${PLAYER_NAMES[0]}: WASD+Space/W &nbsp;|&nbsp; ${PLAYER_NAMES[1]}: Arrows (↑ jump) &nbsp;|&nbsp; ${PLAYER_NAMES[2]}: IJKL (I jump) &nbsp;|&nbsp; Esc or ⚙: Settings`,
+        4: `${PLAYER_NAMES[0]}: WASD &nbsp;|&nbsp; ${PLAYER_NAMES[1]}: Arrows &nbsp;|&nbsp; ${PLAYER_NAMES[2]}: IJKL &nbsp;|&nbsp; ${PLAYER_NAMES[3]}: Num8426 (8 jump) &nbsp;|&nbsp; Esc or ⚙: Settings`
+      };
+      hudEl.innerHTML = hints[playerCount] || hints[1];
     }
 
     function updatePlayersButton() {
-      playersToggleBtn.textContent = twoPlayerMode
-        ? '👤 Switch to 1 player'
-        : '👥 Add 2nd player';
+      if (playerCount >= 4) {
+        playersToggleBtn.textContent = '👤 Solo (1 player)';
+      } else {
+        const ord = ['2nd', '3rd', '4th'][playerCount - 1];
+        playersToggleBtn.textContent = `👥 Add ${ord} player`;
+      }
     }
 
-    function setTwoPlayerMode(on) {
-      twoPlayerMode = !!on;
-      localStorage.setItem(TWO_PLAYER_KEY, twoPlayerMode ? '1' : '0');
+    function updateRemovePlayerUI() {
+      removePlayerBtn.hidden = playerCount <= 1;
+      removePlayerPicker.hidden = true;
+      removePlayerSlots.innerHTML = '';
+      const roster = window.InteractiveWorld?.PLAYER_ROSTER;
+      for (let i = 1; i <= playerCount; i++) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'player-slot-btn';
+        const name = roster?.[i - 1]?.name || PLAYER_NAMES[i - 1] || ('P' + i);
+        const controls = PLAYER_CONTROLS[i - 1] || '';
+        btn.title = 'Remove ' + name + (controls ? ' (' + controls + ')' : '');
+        btn.textContent = name;
+        btn.addEventListener('click', () => removePlayer(i));
+        removePlayerSlots.appendChild(btn);
+      }
+    }
+
+    function setPlayerCount(n) {
+      playerCount = Math.min(4, Math.max(1, n | 0));
+      localStorage.setItem(PLAYER_COUNT_KEY, String(playerCount));
       updatePlayersButton();
       updateHudText();
+      updateRemovePlayerUI();
     }
 
     updateHudText();
     updatePlayersButton();
-
-    function handleEscape() {
-      if (settingsPanel.classList.contains('open')) {
-        closeSettings();
-        return;
-      }
-      if (!engine || !settingsBtn.classList.contains('visible')) return;
-      openSettings();
-    }
+    updateRemovePlayerUI();
 
     function openSettings() {
-      if (engine && engine.isRunning) {
+      if (!engine) return;
+      removePlayerPicker.hidden = true;
+      if (engine.isRunning) {
         engine.stop();
         engine._settingsPaused = true;
       }
-      if (engine && engine.keys) {
+      if (engine.keys) {
         for (const k of Object.keys(engine.keys)) engine.keys[k] = false;
       }
       settingsPanel.classList.add('open');
@@ -199,7 +285,16 @@
       if (engine && engine._settingsPaused) {
         engine._settingsPaused = false;
         engine.start();
+        document.getElementById('game').focus();
       }
+    }
+
+    function toggleSettings() {
+      if (settingsPanel.classList.contains('open')) {
+        closeSettings();
+        return;
+      }
+      if (inGame && engine) openSettings();
     }
 
     function restartGame() {
@@ -207,7 +302,9 @@
       settingsPanel.classList.remove('open');
       if (engine) {
         engine._settingsPaused = false;
-        engine.stop();
+        if (engine.destroy) engine.destroy();
+        else engine.stop();
+        engine = null;
       }
       startGame(pendingRuntime);
     }
@@ -216,25 +313,62 @@
       restartGame();
     }
 
-    function togglePlayers() {
-      setTwoPlayerMode(!twoPlayerMode);
+    function cyclePlayers() {
+      setPlayerCount(playerCount >= 4 ? 1 : playerCount + 1);
       restartGame();
     }
 
+    function removePlayer(slot) {
+      if (playerCount <= 1 || slot < 1 || slot > playerCount) return;
+      setPlayerCount(playerCount - 1);
+      removePlayerPicker.hidden = true;
+      restartGame();
+    }
+
+    function pageDir() {
+      let path = location.pathname;
+      if (!path.endsWith('/')) {
+        const leaf = path.split('/').pop() || '';
+        path = /\.[a-z0-9]+$/i.test(leaf)
+          ? path.replace(/[^/]+$/, '')
+          : path + '/';
+      }
+      return new URL(path, location.origin).href;
+    }
+
+    function resolveCavesweatUrl(relative) {
+      return new URL(relative, pageDir()).href;
+    }
+
     async function loadWorldConfig() {
+      if (location.protocol === 'file:') {
+        throw new Error('file:// cannot load world.json');
+      }
       const params = new URLSearchParams(location.search);
       const configPath = params.get('config') || 'world.json';
-      const res = await fetch(configPath);
-      if (!res.ok) throw new Error(`Could not load ${configPath}`);
+      const configUrl = resolveCavesweatUrl(configPath);
+      let res;
+      try {
+        res = await fetch(configUrl);
+      } catch {
+        throw new Error(`Network error loading ${configPath}`);
+      }
+      if (!res.ok) throw new Error(`Could not load ${configPath} (${res.status})`);
       return JSON.parse(await res.text());
     }
 
     function loadEngineScript() {
       return new Promise((resolve, reject) => {
-        if (window.InteractiveWorld) { resolve(); return; }
+        if (window.InteractiveWorld?.WorldEngine) { resolve(); return; }
         const s = document.createElement('script');
-        s.src = '../src/interactive-background/world-engine.js';
-        s.onload = resolve;
+        s.src = resolveCavesweatUrl('../src/interactive-background/world-engine.js');
+        s.onload = () => {
+          if (!window.InteractiveWorld?.WorldEngine) {
+            reject(new Error('World engine loaded but did not initialize — hard refresh (Ctrl+Shift+R).'));
+            return;
+          }
+          resolve();
+        };
         s.onerror = () => reject(new Error('Could not load the world engine.'));
         document.head.appendChild(s);
       });
@@ -243,12 +377,17 @@
     function startGame(runtime) {
       window.DEEPIRI_DEFAULTS = runtime.defaults;
       loadEngineScript().then(() => {
-        if (engine && engine.stop) engine.stop();
+        if (engine) {
+          if (engine.destroy) engine.destroy();
+          else engine.stop();
+          engine = null;
+        }
         const canvas = document.getElementById('game');
         engine = new window.InteractiveWorld.WorldEngine(canvas, {
           interactive: true,
-          twoPlayer: twoPlayerMode,
-          onEscape: handleEscape
+          playerCount,
+          onSettingsOpen: openSettings,
+          onSettingsToggle: toggleSettings
         });
         if (engine.applyWorldConfig) engine.applyWorldConfig(runtime.apply);
         engine.start();
@@ -256,6 +395,8 @@
         titleEl.textContent = runtime.meta.name;
         overlay.classList.add('hide');
         settingsBtn.classList.add('visible');
+        inGame = true;
+        updateRemovePlayerUI();
       }).catch((e) => {
         errEl.textContent = e.message;
       });
@@ -276,8 +417,19 @@
         // Auto-start when launched from npm (no click needed after first paint)
         if (!location.search.includes('menu=1')) startGame(pendingRuntime);
       } catch (e) {
-        errEl.textContent = e.message || 'Failed to load world.json';
-        descEl.textContent = 'Edit cavesweat/world.json to customize your world.';
+        const msg = e.message || 'Failed to load world.json';
+        const needsServer = location.protocol === 'file:'
+          || /network error/i.test(msg)
+          || e.name === 'TypeError';
+        if (needsServer) {
+          errEl.textContent = location.protocol === 'file:'
+            ? 'Open Cavesweat through the dev server, not as a file.'
+            : 'Cannot reach world.json — is the server running?';
+          descEl.textContent = 'Run: cd cavesweat && npm start — then open http://localhost:3456/cavesweat/';
+        } else {
+          errEl.textContent = msg;
+          descEl.textContent = 'Edit cavesweat/world.json to customize your world.';
+        }
       }
     }
 
@@ -285,8 +437,11 @@
       if (pendingRuntime) startGame(pendingRuntime);
     });
 
-    settingsBtn.addEventListener('click', openSettings);
-    playersToggleBtn.addEventListener('click', togglePlayers);
+    settingsBtn.addEventListener('click', toggleSettings);
+    playersToggleBtn.addEventListener('click', cyclePlayers);
+    removePlayerBtn.addEventListener('click', () => {
+      removePlayerPicker.hidden = !removePlayerPicker.hidden;
+    });
     closeSettingsBtn.addEventListener('click', closeSettings);
     resetBtn.addEventListener('click', resetGame);
     settingsPanel.addEventListener('click', (e) => {

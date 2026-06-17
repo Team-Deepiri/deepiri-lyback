@@ -25,6 +25,7 @@ const DEFAULT_WORLD = {
     particles: 60,
     shovelsSurface: 12,
     shovelsCave: 8,
+    celestialShovels: 1,
     sticksSurface: 16,
     sticksCave: 12
   },
@@ -37,11 +38,19 @@ const DEFAULT_WORLD = {
   },
   heaven: {
     enabled: true,
-    altitude: 280,
-    skyHeight: 400,
-    ascentPlatforms: 55,
-    cloudPlatforms: 24,
-    trees: 10,
+    skyStart: 180,
+    skyClimb: 1050,
+    realmAltitude: 2600,
+    realmDepth: 360,
+    layers: 6,
+    ascentPlatforms: 38,
+    cloudPlatforms: 56,
+    trees: 16,
+    props: 28,
+    chests: 6,
+    crystals: 10,
+    items: 24,
+    creatures: 10,
     freezeRate: 0.12
   },
   survival: {
@@ -88,6 +97,7 @@ function configToDefaults(config = {}) {
     WORLD_PARTICLE_COUNT: e.particles,
     WORLD_SHOVELS_SURFACE: e.shovelsSurface,
     WORLD_SHOVELS_CAVE: e.shovelsCave,
+    WORLD_CELESTIAL_SHOVELS: e.celestialShovels,
     WORLD_STICKS_SURFACE: e.sticksSurface,
     WORLD_STICKS_CAVE: e.sticksCave,
     WORLD_CAVE_ENABLED: c.enabled !== false,
@@ -96,12 +106,20 @@ function configToDefaults(config = {}) {
     WORLD_CAVE_SEALED_POCKETS: c.sealedPockets,
     WORLD_CAVE_LAVA_OFFSET: c.lavaOffset,
     WORLD_HEAVEN_ENABLED: h.enabled === true,
-    WORLD_HEAVEN_ALTITUDE: h.altitude,
+    WORLD_HEAVEN_SKY_START: h.skyStart ?? h.altitude,
+    WORLD_HEAVEN_SKY_CLIMB: h.skyClimb ?? h.skyHeight,
+    WORLD_HEAVEN_REALM_ALTITUDE: h.realmAltitude ?? 2600,
+    WORLD_HEAVEN_REALM_DEPTH: h.realmDepth ?? 360,
     WORLD_HEAVEN_ASCENT_PLATFORMS: h.ascentPlatforms,
     WORLD_HEAVEN_CLOUD_PLATFORMS: h.cloudPlatforms,
+    WORLD_HEAVEN_LAYERS: h.layers,
     WORLD_HEAVEN_TREES: h.trees,
+    WORLD_HEAVEN_PROPS: h.props,
+    WORLD_HEAVEN_CHESTS: h.chests,
+    WORLD_HEAVEN_CRYSTALS: h.crystals,
+    WORLD_HEAVEN_ITEMS: h.items,
+    WORLD_HEAVEN_CREATURES: h.creatures,
     WORLD_HEAVEN_FREEZE_RATE: h.freezeRate,
-    WORLD_HEAVEN_SKY_HEIGHT: h.skyHeight,
     WORLD_SURVIVAL_RUN_SWEAT_MULT: s.runSweatMult,
     WORLD_SURVIVAL_SURFACE_IDLE_SWEAT: s.surfaceIdleSweat,
     WORLD_SURVIVAL_IDLE_DEEP_MULT: s.idleDeepMult,
@@ -171,6 +189,7 @@ function validateConfig(config) {
     ['entities.particles', e.particles, 0, 300],
     ['entities.shovelsSurface', e.shovelsSurface, 0, 40],
     ['entities.shovelsCave', e.shovelsCave, 0, 40],
+    ['entities.celestialShovels', e.celestialShovels, 0, 3],
     ['entities.sticksSurface', e.sticksSurface, 0, 60],
     ['entities.sticksCave', e.sticksCave, 0, 60]
   ];
@@ -180,14 +199,32 @@ function validateConfig(config) {
     }
   }
 
-  if (h.altitude != null && (h.altitude < 80 || h.altitude > 600)) {
-    errors.push('heaven.altitude must be between 80 and 600');
+  if (h.skyStart != null && (h.skyStart < 60 || h.skyStart > 600)) {
+    errors.push('heaven.skyStart must be between 60 and 600');
+  }
+  if (h.altitude != null && (h.altitude < 60 || h.altitude > 600)) {
+    errors.push('heaven.altitude must be between 60 and 600');
+  }
+  if (h.skyClimb != null && (h.skyClimb < 200 || h.skyClimb > 1600)) {
+    errors.push('heaven.skyClimb must be between 200 and 1600');
+  }
+  if (h.skyHeight != null && (h.skyHeight < 200 || h.skyHeight > 1600)) {
+    errors.push('heaven.skyHeight must be between 200 and 1600');
+  }
+  if (h.realmAltitude != null && (h.realmAltitude < 1200 || h.realmAltitude > 4000)) {
+    errors.push('heaven.realmAltitude must be between 1200 and 4000');
+  }
+  if (h.realmDepth != null && (h.realmDepth < 120 || h.realmDepth > 800)) {
+    errors.push('heaven.realmDepth must be between 120 and 800');
   }
   if (h.ascentPlatforms != null && (h.ascentPlatforms < 0 || h.ascentPlatforms > 120)) {
     errors.push('heaven.ascentPlatforms must be between 0 and 120');
   }
-  if (h.cloudPlatforms != null && (h.cloudPlatforms < 0 || h.cloudPlatforms > 60)) {
-    errors.push('heaven.cloudPlatforms must be between 0 and 60');
+  if (h.cloudPlatforms != null && (h.cloudPlatforms < 0 || h.cloudPlatforms > 240)) {
+    errors.push('heaven.cloudPlatforms must be between 0 and 240 (0 = auto)');
+  }
+  if (h.layers != null && (h.layers < 3 || h.layers > 16)) {
+    errors.push('heaven.layers must be between 3 and 16');
   }
   if (h.trees != null && (h.trees < 0 || h.trees > 40)) {
     errors.push('heaven.trees must be between 0 and 40');
@@ -195,8 +232,8 @@ function validateConfig(config) {
   if (h.freezeRate != null && (h.freezeRate < 0.01 || h.freezeRate > 1)) {
     errors.push('heaven.freezeRate must be between 0.01 and 1');
   }
-  if (h.skyHeight != null && (h.skyHeight < 120 || h.skyHeight > 800)) {
-    errors.push('heaven.skyHeight must be between 120 and 800');
+  if (h.skyHeight != null && (h.skyHeight < 120 || h.skyHeight > 1200)) {
+    errors.push('heaven.skyHeight is deprecated — use skyClimb (200–1600)');
   }
   if (s.runSweatMult != null && (s.runSweatMult < 0.5 || s.runSweatMult > 5)) {
     errors.push('survival.runSweatMult must be between 0.5 and 5');
