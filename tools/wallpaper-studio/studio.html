@@ -1523,7 +1523,12 @@
         });
         native.terminal.onExit(() => termPrint('\n[shell exited]\n', 'term-sys'));
         native.terminal.start().then((info) => {
-          termPrint('Connected to ' + (info && info.shell ? info.shell : 'shell') + '\n', 'term-sys');
+          let msg = 'Connected to ' + (info && info.shell ? info.shell : 'shell');
+          if (info && info.wsl) {
+            msg += '\nWSL mode — Desktop portals use your Windows Desktop';
+            if (info.desktop) msg += '\n  ' + info.desktop;
+          }
+          termPrint(msg + '\n', 'term-sys');
         });
       }
     }
