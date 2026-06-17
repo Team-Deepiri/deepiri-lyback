@@ -325,8 +325,8 @@ const InteractiveWorld = (() => {
     return MAP_ITEM_TYPES[Math.floor(Math.random() * MAP_ITEM_TYPES.length)];
   }
 
-  const PICKUP_SPREAD_MIN = 220;
-  const PICKUP_SPREAD_CELL = 260;
+  const PICKUP_SPREAD_MIN = 160;
+  const PICKUP_SPREAD_CELL = 200;
   const CAVE_PICKUP_SPREAD_MIN = 100;
 
   function shuffleInPlace(arr) {
@@ -370,13 +370,16 @@ const InteractiveWorld = (() => {
         const k = cellKey(x, y);
         cellCounts.set(k, (cellCounts.get(k) || 0) + 1);
       },
-      tryPlace(getCandidate, attempts = 28, sep = minSep) {
-        for (let t = 0; t < attempts; t++) {
-          const c = getCandidate(t);
-          if (!c) continue;
-          if (this.canPlace(c.x, c.y, sep)) {
-            this.mark(c.x, c.y);
-            return c;
+      tryPlace(getCandidate, attempts = 36, sep = minSep) {
+        const seps = [sep, sep * 0.86, sep * 0.72, sep * 0.58];
+        for (const curSep of seps) {
+          for (let t = 0; t < attempts; t++) {
+            const c = getCandidate(t);
+            if (!c) continue;
+            if (this.canPlace(c.x, c.y, curSep)) {
+              this.mark(c.x, c.y);
+              return c;
+            }
           }
         }
         return null;
@@ -386,6 +389,30 @@ const InteractiveWorld = (() => {
         const band = span / Math.max(1, count);
         const base = margin + band * (index + 0.5);
         return base + (Math.random() - 0.5) * band * jitter;
+      }
+    };
+  }
+
+  // One band slot per surface pickup so shovels/sticks/chests/crystals never stack up.
+  function createSurfacePickupPlacer(spreader) {
+    const margin = 140;
+    const total = CFG.CHEST_COUNT + CFG.CRYSTAL_COUNT
+      + CFG.SHOVELS_SURFACE + CFG.STICKS_SURFACE;
+    let slot = 0;
+    return {
+      total,
+      margin,
+      place(heights, yFor) {
+        if (!spreader) {
+          const x = margin + Math.random() * (CFG.WORLD_WIDTH - margin * 2);
+          const y = typeof yFor === 'function' ? yFor(x) : getTerrainY(heights, x) - yFor;
+          return { x, y };
+        }
+        const mySlot = slot++;
+        const x = spreader.bandX(mySlot, total, margin, 0.38);
+        const y = typeof yFor === 'function' ? yFor(x) : getTerrainY(heights, x) - yFor;
+        spreader.mark(x, y);
+        return { x, y };
       }
     };
   }
@@ -509,16 +536,16 @@ const InteractiveWorld = (() => {
     return portals;
   }
 
-  function generateChests(heights, spreader) {
+  function generateChests(heights, spreader, surfacePlacer) {
     const chests = [];
     const n = CFG.CHEST_COUNT;
     for (let i = 0; i < n; i++) {
-      const spot = spreader
-        ? spreader.tryPlace(() => {
+      const spot = surfacePlacer
+        ? surfacePlacer.place(heights, 18)
+        : spreader?.tryPlace(() => {
             const x = spreader.bandX(i, n, 200, 0.5);
             return { x, y: getTerrainY(heights, x) - 18 };
-          }, 32, PICKUP_SPREAD_MIN)
-        : { x: 200 + Math.random() * (CFG.WORLD_WIDTH - 400), y: getTerrainY(heights, 200) - 18 };
+          }, 32, PICKUP_SPREAD_MIN);
       if (!spot) continue;
       const biome = getBiome(spot.x);
       chests.push({
@@ -534,22 +561,20 @@ const InteractiveWorld = (() => {
     return chests;
   }
 
-  function generateCrystals(heights, spreader) {
+  function generateCrystals(heights, spreader, surfacePlacer) {
     const crystals = [];
     const n = CFG.CRYSTAL_COUNT;
     for (let i = 0; i < n; i++) {
-      const spot = spreader
-        ? spreader.tryPlace(() => {
+      const spot = surfacePlacer
+        ? surfacePlacer.place(heights, (x) => getTerrainY(heights, x) - 40 - Math.random() * 80)
+        : spreader?.tryPlace(() => {
             const x = spreader.bandX(i, n, 160, 0.55);
             return { x, y: getTerrainY(heights, x) - 40 - Math.random() * 80 };
-          }, 32, PICKUP_SPREAD_MIN)
-        : null;
-      if (spreader && !spot) continue;
-      const x = spot ? spot.x : 100 + Math.random() * (CFG.WORLD_WIDTH - 200);
-      const y = spot ? spot.y : getTerrainY(heights, x) - 40 - Math.random() * 80;
+          }, 32, PICKUP_SPREAD_MIN);
+      if (!spot) continue;
       const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'];
       crystals.push({
-        x, y,
+        x: spot.x, y: spot.y,
         size: 6 + Math.random() * 6,
         color: colors[Math.floor(Math.random() * colors.length)],
         phase: Math.random() * Math.PI * 2,
@@ -872,17 +897,22 @@ const InteractiveWorld = (() => {
   }
 
   // Shovel pickups on the surface and in caves.
-  function generateShovels(heights, spreader) {
+  function generateShovels(heights, spreader, surfacePlacer) {
     const shovels = [];
     const n = CFG.SHOVELS_SURFACE;
     const margin = 140;
     for (let i = 0; i < n; i++) {
-      const spot = spreader
-        ? spreader.tryPlace(() => {
-            const x = spreader.bandX(i, n, margin, 0.55);
-            return { x, y: getTerrainY(heights, x) - 16 };
-          }, 32, PICKUP_SPREAD_MIN)
-        : { x: margin + Math.random() * (CFG.WORLD_WIDTH - margin * 2), y: 0 };
+      const spot = surfacePlacer
+        ? surfacePlacer.place(heights, 16)
+        : spreader
+          ? spreader.tryPlace((t) => {
+              const x = spreader.bandX(i + t * 0.09, n, margin, 0.55);
+              return { x, y: getTerrainY(heights, x) - 16 };
+            }, 48, PICKUP_SPREAD_MIN)
+          : (() => {
+              const x = margin + Math.random() * (CFG.WORLD_WIDTH - margin * 2);
+              return { x, y: getTerrainY(heights, x) - 16 };
+            })();
       if (!spot) continue;
       const r = Math.random();
       const tier = r < 0.60 ? 0 : r < 0.82 ? 1 : r < 0.96 ? 2 : 3;
@@ -936,17 +966,22 @@ const InteractiveWorld = (() => {
     return shovels;
   }
 
-  function generateSticks(heights, spreader) {
+  function generateSticks(heights, spreader, surfacePlacer) {
     const sticks = [];
     const n = CFG.STICKS_SURFACE;
     const margin = 140;
     for (let i = 0; i < n; i++) {
-      const spot = spreader
-        ? spreader.tryPlace(() => {
-            const x = spreader.bandX(i, n, margin, 0.55);
-            return { x, y: getTerrainY(heights, x) - 12 };
-          }, 32, PICKUP_SPREAD_MIN)
-        : { x: margin + Math.random() * (CFG.WORLD_WIDTH - margin * 2), y: 0 };
+      const spot = surfacePlacer
+        ? surfacePlacer.place(heights, 12)
+        : spreader
+          ? spreader.tryPlace((t) => {
+              const x = spreader.bandX(i + t * 0.09, n, margin, 0.55);
+              return { x, y: getTerrainY(heights, x) - 12 };
+            }, 48, PICKUP_SPREAD_MIN)
+          : (() => {
+              const x = margin + Math.random() * (CFG.WORLD_WIDTH - margin * 2);
+              return { x, y: getTerrainY(heights, x) - 12 };
+            })();
       if (!spot) continue;
       sticks.push({
         x: spot.x, y: spot.y,
@@ -1943,11 +1978,12 @@ const InteractiveWorld = (() => {
       this.heavenTrees = generateHeavenTrees(this.heavenTerrain);
       this.portals = generatePortals(this.terrain);
       const pickupSpread = createPickupSpreader();
-      this.chests = generateChests(this.terrain, pickupSpread);
-      this.crystals = generateCrystals(this.terrain, pickupSpread);
-      this.shovels = generateShovels(this.terrain, pickupSpread)
+      const surfacePlacer = createSurfacePickupPlacer(pickupSpread);
+      this.chests = generateChests(this.terrain, pickupSpread, surfacePlacer);
+      this.crystals = generateCrystals(this.terrain, pickupSpread, surfacePlacer);
+      this.shovels = generateShovels(this.terrain, pickupSpread, surfacePlacer)
         .concat(generateCaveShovels(this.caves, this.terrain, this.heavenTerrain, pickupSpread));
-      this.stickPickups = generateSticks(this.terrain, pickupSpread)
+      this.stickPickups = generateSticks(this.terrain, pickupSpread, surfacePlacer)
         .concat(generateCaveSticks(this.caves, this.terrain, this.heavenTerrain, pickupSpread));
       this.fires = [];
       this.heat = 0;
@@ -4180,7 +4216,7 @@ const InteractiveWorld = (() => {
     generateShovels, generateCaveShovels, generateSticks, generateCaveSticks,
     generateAscentPlatforms, generateCloudPlatforms, generateGateClouds,
     generateCheckpoints, generateMapItems, layoutCaveProps, roomFloorY, roomCeilingY,
-    createPickupSpreader, PICKUP_SPREAD_MIN, CAVE_PICKUP_SPREAD_MIN
+    createPickupSpreader, createSurfacePickupPlacer, PICKUP_SPREAD_MIN, CAVE_PICKUP_SPREAD_MIN
   };
 })();
 

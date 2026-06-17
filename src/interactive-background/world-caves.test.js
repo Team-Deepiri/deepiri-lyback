@@ -7,8 +7,8 @@ const {
   inHeavenZone, computeSweatRate, generateShovels, generateCaveShovels,
   generateSticks, generateCaveSticks,
   generateAscentPlatforms, generateCloudPlatforms, generateGateClouds,
-  generateHeavenTerrain, getHeavenGroundY, getBiomeAt, touchesWall,
-  layoutCaveProps, roomFloorY
+  generateHeavenTerrain, getHeavenGroundY, getBiomeAt, getTerrainY, touchesWall,
+  generateCheckpoints, generateMapItems, layoutCaveProps, roomFloorY, roomCeilingY
 } = InteractiveWorld;
 
 describe('cave system', () => {
@@ -100,8 +100,13 @@ describe('cave system', () => {
   });
 
   it('makes chamber centers walkable (not solid)', () => {
-    const c = caves.chambers[0];
-    expect(isRockAt(caves, terrain, c.x, c.y)).toBe(false);
+    const c = caves.chambers.find((ch) => {
+      const py = ch.y + Math.min(12, ch.r * 0.25);
+      return caveCarved(caves, ch.x, py) && getTerrainY(terrain, ch.x) < py;
+    });
+    expect(c).toBeTruthy();
+    const py = c.y + Math.min(12, c.r * 0.25);
+    expect(isRockAt(caves, terrain, c.x, py)).toBe(false);
   });
 
   it('keeps chambers above the world floor so the player cannot fall out', () => {
@@ -169,32 +174,72 @@ describe('survival and heaven helpers', () => {
 
   it('spawns shovels and sticks on surface and in caves', () => {
     const caves = generateCaves(terrain);
-    const shovels = generateShovels(terrain, caves.entrances)
-      .concat(generateCaveShovels(caves, terrain));
-    const sticks = generateSticks(terrain, caves.entrances)
-      .concat(generateCaveSticks(caves));
-    expect(shovels.length).toBeGreaterThanOrEqual(12);
-    expect(sticks.length).toBeGreaterThanOrEqual(16);
-    expect(shovels.some((s) => s.kind === 'surface')).toBe(true);
+    const spreader = InteractiveWorld.createPickupSpreader();
+    const surfacePlacer = InteractiveWorld.createSurfacePickupPlacer(spreader);
+    const shovels = generateShovels(terrain, spreader, surfacePlacer)
+      .concat(generateCaveShovels(caves, terrain, null, spreader));
+    const sticks = generateSticks(terrain, spreader, surfacePlacer)
+      .concat(generateCaveSticks(caves, terrain, null, spreader));
+    expect(shovels.filter((s) => s.kind === 'surface').length).toBe(12);
+    expect(sticks.filter((s) => s.kind === 'surface').length).toBe(16);
     expect(shovels.some((s) => s.kind === 'cave')).toBe(true);
+    expect(sticks.some((s) => s.kind === 'cave')).toBe(true);
   });
 
-  it('limits cave decor per area and snaps props to room floors', () => {
+  it('spreads surface pickups apart instead of clustering at cave entrances', () => {
+    const spreader = InteractiveWorld.createPickupSpreader();
+    const surfacePlacer = InteractiveWorld.createSurfacePickupPlacer(spreader);
+    const shovels = generateShovels(terrain, spreader, surfacePlacer);
+    const sticks = generateSticks(terrain, spreader, surfacePlacer);
+    const surface = shovels.concat(sticks);
+    const band = (5000 - surfacePlacer.margin * 2) / surfacePlacer.total;
+    for (let i = 0; i < surface.length; i++) {
+      for (let j = i + 1; j < surface.length; j++) {
+        expect(Math.abs(surface[i].x - surface[j].x)).toBeGreaterThanOrEqual(band * 0.35);
+      }
+    }
+  });
+
+  it('limits cave decor per area and anchors props to room geometry', () => {
     const caves = generateCaves(terrain);
-    const { caveChests, buckets } = InteractiveWorld.layoutCaveProps(caves, terrain);
-    let totalBoulders = 0, totalCrystals = 0;
+    const { caveChests, buckets } = layoutCaveProps(caves, terrain);
+    let totalBoulders = 0, totalCrystals = 0, totalStalactites = 0;
     for (const c of caves.chambers) {
       totalBoulders += (c.boulders || []).length;
       totalCrystals += (c.crystals || []).length;
+      totalStalactites += (c.stalactites || []).length;
       for (const b of (c.boulders || [])) {
-        const fy = InteractiveWorld.roomFloorY(c, b.dx);
-        expect(Math.abs(fy - (c.y + b.dy))).toBeLessThan(1);
+        const fy = roomFloorY(c, b.dx);
+        expect(caveCarved(caves, c.x + b.dx, fy - 8)).toBe(true);
+        expect(isRockAt(caves, terrain, c.x + b.dx, fy + 6)).toBe(true);
+      }
+      for (const s of (c.stalactites || [])) {
+        const x = c.x + s.dx;
+        if (s.up) {
+          const fy = roomFloorY(c, s.dx);
+          expect(caveCarved(caves, x, fy - 8)).toBe(true);
+        } else {
+          const cy = roomCeilingY(c, s.dx);
+          expect(caveCarved(caves, x, cy + 12)).toBe(true);
+          expect(isRockAt(caves, terrain, x, cy - 4)).toBe(true);
+        }
       }
     }
     expect(totalBoulders).toBeLessThan(caves.chambers.length * 2);
     expect(totalCrystals).toBeLessThan(caves.chambers.length);
+    expect(totalStalactites).toBeGreaterThan(0);
     expect(caveChests.length).toBeLessThanOrEqual(caves.pockets.length);
     expect(buckets.length).toBeLessThan(caves.chambers.length);
+  });
+
+  it('places checkpoints and map trinkets across the world', () => {
+    const caves = generateCaves(terrain);
+    const heavenTerrain = generateHeavenTerrain(terrain);
+    const cps = generateCheckpoints(terrain, caves, heavenTerrain);
+    const items = generateMapItems(terrain, caves, heavenTerrain);
+    expect(cps.length).toBeGreaterThanOrEqual(2);
+    expect(items.length).toBeGreaterThan(10);
+    expect(cps.some((cp) => cp.kind === 'surface')).toBe(true);
   });
 
   it('detects rock walls beside the player for wall grab', () => {
