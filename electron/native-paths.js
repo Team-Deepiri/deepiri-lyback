@@ -32,14 +32,27 @@ function wslToWindowsPath(wslPath) {
   return match[1].toUpperCase() + ':\\' + match[2].replace(/\//g, '\\');
 }
 
+const UNSAFE_WIN_CHARS = /["&|<>^%;\r\n]/;
+
 // Reject cmd metacharacters so a path cannot break out of execFile argv.
 function isSafeWindowsPath(winPath) {
   if (typeof winPath !== 'string' || !winPath) return false;
-  return /^[A-Za-z]:\\(?:[^"&|<>^%;\r\n]+\\)*[^"&|<>^%;\r\n]*$/.test(winPath);
+  if (winPath.length < 3) return false;
+  if (!/[A-Za-z]/.test(winPath[0]) || winPath[1] !== ':' || winPath[2] !== '\\') return false;
+  return !UNSAFE_WIN_CHARS.test(winPath);
 }
 
 function isSafeWslMountPath(wslPath) {
-  return /^\/mnt\/[a-z]\/(?:[^/&|<>^%;\0]+\/)*[^/&|<>^%;\0]*$/i.test(String(wslPath));
+  const s = String(wslPath);
+  const m = s.match(/^\/mnt\/([a-z])\/(.*)$/i);
+  if (!m) return false;
+  const unsafe = /[&|<>^%;\0]/;
+  const tail = m[2];
+  if (unsafe.test(tail)) return false;
+  for (const seg of tail.split('/')) {
+    if (unsafe.test(seg)) return false;
+  }
+  return true;
 }
 
 function readWindowsUserProfile() {

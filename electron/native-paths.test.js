@@ -31,4 +31,11 @@ describe('native-paths', () => {
     expect(isSafeWslMountPath('/mnt/c/Users/alice/Desktop/evil & calc')).toBe(false);
     expect(isSafeWslMountPath('/tmp/outside')).toBe(false);
   });
+
+  it('validates long Windows paths without regex backtracking', () => {
+    const long = 'C:\\Users\\alice\\' + 'folder\\'.repeat(200) + 'file.txt';
+    expect(isSafeWindowsPath(long)).toBe(true);
+    expect(isSafeWindowsPath('A:\\' + '!\\'.repeat(200))).toBe(true);
+    expect(isSafeWindowsPath('C:\\evil & calc')).toBe(false);
+  });
 });
