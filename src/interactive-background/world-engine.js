@@ -31,12 +31,15 @@ const InteractiveWorld = (() => {
     GROUND_BOTTOM: DEFAULTS.WORLD_GROUND_BOTTOM || '#1a0a0a',
     PLAYER_COLOR: DEFAULTS.WORLD_PLAYER_COLOR || '#4ecdc4',
     HEAVEN_ENABLED: DEFAULTS.WORLD_HEAVEN_ENABLED === true,
-    HEAVEN_ALTITUDE: DEFAULTS.WORLD_HEAVEN_ALTITUDE ?? 280,
+    HEAVEN_SKY_START: DEFAULTS.WORLD_HEAVEN_SKY_START ?? DEFAULTS.WORLD_HEAVEN_ALTITUDE ?? 180,
+    HEAVEN_SKY_CLIMB: DEFAULTS.WORLD_HEAVEN_SKY_CLIMB ?? DEFAULTS.WORLD_HEAVEN_SKY_HEIGHT ?? 1050,
+    HEAVEN_REALM_ALTITUDE: DEFAULTS.WORLD_HEAVEN_REALM_ALTITUDE ?? 2600,
+    HEAVEN_REALM_DEPTH: DEFAULTS.WORLD_HEAVEN_REALM_DEPTH ?? 360,
     HEAVEN_ASCENT_PLATFORMS: DEFAULTS.WORLD_HEAVEN_ASCENT_PLATFORMS ?? 28,
-    HEAVEN_CLOUD_PLATFORMS: DEFAULTS.WORLD_HEAVEN_CLOUD_PLATFORMS ?? 14,
+    HEAVEN_CLOUD_PLATFORMS: DEFAULTS.WORLD_HEAVEN_CLOUD_PLATFORMS ?? 0,
+    HEAVEN_LAYERS: DEFAULTS.WORLD_HEAVEN_LAYERS ?? 6,
     HEAVEN_TREES: DEFAULTS.WORLD_HEAVEN_TREES ?? 10,
     HEAVEN_FREEZE_RATE: DEFAULTS.WORLD_HEAVEN_FREEZE_RATE ?? 0.12,
-    HEAVEN_SKY_HEIGHT: DEFAULTS.WORLD_HEAVEN_SKY_HEIGHT ?? 400,
     ASCENT_STEP_Y: 46,
     SURVIVAL_RUN_SWEAT_MULT: DEFAULTS.WORLD_SURVIVAL_RUN_SWEAT_MULT ?? 1.8,
     SURVIVAL_SURFACE_IDLE_SWEAT: DEFAULTS.WORLD_SURVIVAL_SURFACE_IDLE_SWEAT ?? 0.015,
@@ -81,6 +84,55 @@ const InteractiveWorld = (() => {
     return { name: 'plains', grass: '#5aaa6b', dirt: '#4a8a5a', ground: '#3a7a4a', accent: '#7aca8b' };
   }
 
+  const HEAVEN_BIOME = {
+    name: 'heaven',
+    grass: '#f0f8ff',
+    dirt: '#dceeff',
+    ground: '#c8e0ff',
+    accent: '#ffd479'
+  };
+
+  // Bottom lip of the sky-climb cloud parkour (not the heaven realm itself).
+  function skyBaseAt(heights, x) {
+    return getTerrainY(heights, x) - CFG.HEAVEN_SKY_START;
+  }
+
+  function generateHeavenTerrain(surfaceHeights) {
+    const h = new Float32Array(SEGMENTS + 1);
+    for (let i = 0; i <= SEGMENTS; i++) {
+      const x = (i / SEGMENTS) * CFG.WORLD_WIDTH;
+      const surf = getTerrainY(surfaceHeights, x);
+      let wobble = Math.sin(x * 0.0016) * 55;
+      wobble += Math.sin(x * 0.0042) * 28;
+      wobble += Math.sin(x * 0.0095) * 12;
+      wobble += Math.sin(x * 0.019) * 6;
+      h[i] = surf - CFG.HEAVEN_REALM_ALTITUDE + wobble;
+    }
+    return h;
+  }
+
+  function getHeavenGroundY(heavenHeights, x) {
+    if (!heavenHeights) return Infinity;
+    return getTerrainY(heavenHeights, x);
+  }
+
+  function getBiomeAt(x, y, heights, heavenHeights) {
+    if (CFG.HEAVEN_ENABLED && heavenHeights) {
+      const hgY = getHeavenGroundY(heavenHeights, x);
+      if (y + CFG.PLAYER_H * 0.5 < hgY + 28) return HEAVEN_BIOME;
+    }
+    return getBiome(x);
+  }
+
+  function addCloudPlatform(platforms, x, y, w) {
+    platforms.push({
+      x, y, w, h: 14,
+      color: 'rgba(255,255,255,0.9)', kind: 'cloud',
+      bob: Math.random() * Math.PI * 2,
+      bobAmp: 1.5 + Math.random() * 3
+    });
+  }
+
   function generatePlatforms(heights) {
     const platforms = [];
     for (let i = 0; i < CFG.PLATFORM_COUNT; i++) {
@@ -97,12 +149,12 @@ const InteractiveWorld = (() => {
     return platforms;
   }
 
-  // Stepping-stone tower from the surface lip up to the heaven cloud layer.
+  // Stepping-stone tower from the surface up to the first sky-climb clouds.
   function buildAscentTower(platforms, heights, towerX) {
     const surf = getTerrainY(heights, towerX);
     const biome = getBiome(towerX);
-    const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
-    const goalY = heavenLine + 45;
+    const skyLine = skyBaseAt(heights, towerX);
+    const goalY = skyLine + 45;
     const startY = surf - 10;
     const stepY = CFG.ASCENT_STEP_Y;
     const steps = Math.max(5, Math.ceil((startY - goalY) / stepY));
@@ -122,9 +174,15 @@ const InteractiveWorld = (() => {
       });
       if (py <= goalY) break;
     }
+
+    platforms.push({
+      x: px - 58, y: goalY - 22, w: 116, h: 14,
+      color: 'rgba(255,255,255,0.9)', kind: 'cloud',
+      bob: Math.random() * Math.PI * 2, bobAmp: 2
+    });
   }
 
-  // Stepping-stone platforms between ground and the heaven cloud layer.
+  // Stepping-stone platforms between ground and the sky-climb cloud layer.
   function generateAscentPlatforms(heights, entrances) {
     if (!CFG.HEAVEN_ENABLED) return [];
     const platforms = [];
@@ -143,9 +201,9 @@ const InteractiveWorld = (() => {
     while (platforms.length < CFG.HEAVEN_ASCENT_PLATFORMS) {
       const x = 250 + Math.random() * (CFG.WORLD_WIDTH - 500);
       const surf = getTerrainY(heights, x);
-      const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
-      const y = surf - 80 - Math.random() * (surf - heavenLine - 100);
-      if (y < heavenLine + 30) break;
+      const skyLine = skyBaseAt(heights, x);
+      const y = surf - 80 - Math.random() * (surf - skyLine - 100);
+      if (y < skyLine + 30) break;
       platforms.push({
         x: x - 35, y, w: 70 + Math.random() * 40, h: 12,
         color: getBiome(x).accent, kind: 'solid'
@@ -154,47 +212,99 @@ const InteractiveWorld = (() => {
     return platforms.slice(0, CFG.HEAVEN_ASCENT_PLATFORMS);
   }
 
-  // Soft cloud platforms in the heaven zone — reachable after climbing ascent towers.
-  function generateCloudPlatforms(heights) {
+  // Cloud parkour through the sky — approach route only, not the heaven realm.
+  function generateCloudPlatforms(heights, heavenHeights) {
     if (!CFG.HEAVEN_ENABLED) return [];
     const platforms = [];
-    const clusters = Math.max(5, Math.ceil(CFG.HEAVEN_CLOUD_PLATFORMS / 5));
-    const perCluster = Math.ceil(CFG.HEAVEN_CLOUD_PLATFORMS / clusters);
-    const skyDepth = CFG.HEAVEN_SKY_HEIGHT * 0.4;
+    const layers = Math.max(3, CFG.HEAVEN_LAYERS);
+    const climbDepth = CFG.HEAVEN_SKY_CLIMB;
+    const layerStep = climbDepth / layers;
+    const segCount = Math.max(10, Math.floor(CFG.WORLD_WIDTH / 380));
+    const maxClouds = CFG.HEAVEN_CLOUD_PLATFORMS > 0
+      ? CFG.HEAVEN_CLOUD_PLATFORMS
+      : layers * segCount * 2;
 
-    for (let c = 0; c < clusters; c++) {
-      const cx = 180 + Math.random() * (CFG.WORLD_WIDTH - 360);
-      const surf = getTerrainY(heights, cx);
-      const heavenLine = surf - CFG.HEAVEN_ALTITUDE;
-      let px = cx;
-      let py = heavenLine - 25;
-      for (let i = 0; i < perCluster && platforms.length < CFG.HEAVEN_CLOUD_PLATFORMS; i++) {
-        px += (Math.random() - 0.5) * 100;
-        py -= 30 + Math.random() * 32;
-        if (py < heavenLine - skyDepth) py = heavenLine - 30 - Math.random() * 60;
-        platforms.push({
-          x: px, y: py, w: 110 + Math.random() * 50, h: 14,
-          color: 'rgba(255,255,255,0.85)', kind: 'cloud',
-          bob: Math.random() * Math.PI * 2, bobAmp: 2 + Math.random() * 3
-        });
+    for (let layer = 0; layer < layers; layer++) {
+      const drop = 35 + layer * layerStep;
+      if (drop > climbDepth - 20) break;
+      for (let s = 0; s < segCount && platforms.length < maxClouds; s++) {
+        const cx = (s + 0.5) * (CFG.WORLD_WIDTH / segCount) + (Math.random() - 0.5) * 90;
+        const py = skyBaseAt(heights, cx) - drop;
+        const w = 105 + Math.random() * 75;
+        addCloudPlatform(platforms, cx - w / 2, py, w);
+
+        if (s < segCount - 1 && platforms.length < maxClouds) {
+          const nx = (s + 1.5) * (CFG.WORLD_WIDTH / segCount);
+          const midX = (cx + nx) / 2 + (Math.random() - 0.5) * 50;
+          const midY = skyBaseAt(heights, midX) - drop - 18 - Math.random() * 22;
+          addCloudPlatform(platforms, midX - 42, midY, 72 + Math.random() * 36);
+        }
       }
     }
+
+    const ladderCount = Math.max(10, Math.floor(CFG.WORLD_WIDTH / 420));
+    for (let i = 0; i < ladderCount && platforms.length < maxClouds; i++) {
+      const lx = 180 + i * ((CFG.WORLD_WIDTH - 360) / Math.max(1, ladderCount - 1));
+      let py = skyBaseAt(heights, lx) - 28;
+      for (let layer = 0; layer < layers && platforms.length < maxClouds; layer++) {
+        const w = 88 + Math.random() * 32;
+        const ox = (layer % 2 === 0 ? -1 : 1) * (24 + Math.random() * 18);
+        addCloudPlatform(platforms, lx - w / 2 + ox, py, w);
+        py -= layerStep * 0.82;
+      }
+    }
+
+    const bridgeCols = Math.max(8, Math.floor(CFG.WORLD_WIDTH / 480));
+    for (let layer = 0; layer < layers - 1 && platforms.length < maxClouds; layer++) {
+      const baseDrop = 35 + layer * layerStep;
+      const bridgeDrop = baseDrop + layerStep * 0.48;
+      for (let b = 0; b < bridgeCols && platforms.length < maxClouds; b++) {
+        const bx = 200 + b * ((CFG.WORLD_WIDTH - 400) / Math.max(1, bridgeCols - 1));
+        const py = skyBaseAt(heights, bx) - bridgeDrop - (Math.random() - 0.5) * 12;
+        addCloudPlatform(platforms, bx - 44, py, 76 + Math.random() * 28);
+      }
+    }
+
+    generateGateClouds(platforms, heights, heavenHeights, maxClouds);
     return platforms;
   }
 
-  // Tall trees rooted near surface with canopies piercing through the heaven layer.
-  function generateHeavenTrees(heights) {
-    if (!CFG.HEAVEN_ENABLED) return [];
+  // Final cloud hops through the abyss up to the solid heaven realm.
+  function generateGateClouds(platforms, heights, heavenHeights, maxClouds) {
+    if (!heavenHeights) return;
+    const cols = Math.max(14, Math.floor(CFG.WORLD_WIDTH / 340));
+    for (let i = 0; i < cols && platforms.length < maxClouds; i++) {
+      const gx = 120 + i * ((CFG.WORLD_WIDTH - 240) / Math.max(1, cols - 1));
+      const skyTop = skyBaseAt(heights, gx) - CFG.HEAVEN_SKY_CLIMB + 50;
+      const hgY = getHeavenGroundY(heavenHeights, gx);
+      const abyss = skyTop - hgY;
+      if (abyss < 80) continue;
+      const steps = Math.max(5, Math.ceil(abyss / 92));
+      for (let s = 0; s < steps && platforms.length < maxClouds; s++) {
+        const t = (s + 0.55) / steps;
+        const py = skyTop - t * abyss + (Math.random() - 0.5) * 18;
+        const w = 82 + Math.random() * 48;
+        const ox = (s % 2 === 0 ? -1 : 1) * (22 + Math.random() * 28);
+        addCloudPlatform(platforms, gx - w / 2 + ox, py, w);
+      }
+      addCloudPlatform(platforms, gx - 64, hgY - 58, 128 + Math.random() * 40);
+    }
+  }
+
+  // Ethereal trees rooted on heaven solid ground only.
+  function generateHeavenTrees(heavenHeights) {
+    if (!CFG.HEAVEN_ENABLED || !heavenHeights) return [];
     const trees = [];
     for (let i = 0; i < CFG.HEAVEN_TREES; i++) {
       const x = 150 + Math.random() * (CFG.WORLD_WIDTH - 300);
-      const surf = getTerrainY(heights, x);
-      const height = CFG.HEAVEN_ALTITUDE + 60 + Math.random() * 80;
+      const baseY = getHeavenGroundY(heavenHeights, x);
+      const height = 45 + Math.random() * 75;
       trees.push({
-        x, baseY: surf, topY: surf - height,
-        trunkW: 8 + Math.random() * 6,
-        canopyR: 22 + Math.random() * 18,
-        color: getBiome(x).ground
+        x, baseY, topY: baseY - height,
+        trunkW: 5 + Math.random() * 6,
+        canopyR: 20 + Math.random() * 24,
+        color: Math.random() > 0.45 ? '#fff4d6' : '#e8f4ff',
+        glow: '#ffd479'
       });
     }
     return trees;
@@ -261,8 +371,8 @@ const InteractiveWorld = (() => {
   // ---- cave / tunnel system -------------------------------------------------
   // Caves are an analytic network: round-capped tunnel "capsules" plus circular
   // chambers carved out of the solid rock that fills everything below the
-  // surface. Entrances are shafts whose tops break through the surface so the
-  // player can drop in.
+  // surface. Entrances are vertical shafts opening flush with the terrain so
+  // the player can drop in (rendering clips caves below the surface line).
   const COLORS_LIST = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9'];
 
   function makeStalactites(r) {
@@ -451,8 +561,8 @@ const InteractiveWorld = (() => {
       let curX = ex;
       let curY = clampY(surf + 190 + Math.random() * 110);
 
-      // Entrance shaft — top breaks through the surface to open a hole.
-      tunnels.push({ ax: ex, ay: surf - 26, bx: ex + (Math.random() - 0.5) * 30, by: curY, r: R });
+      // Entrance shaft — top sits at the surface so the opening is level, not domed.
+      tunnels.push({ ax: ex, ay: surf, bx: ex + (Math.random() - 0.5) * 30, by: curY, r: R, entrance: true });
 
       // Descend through several levels, branching a gallery + chamber at each,
       // so each entrance becomes a sprawling multi-level system.
@@ -637,18 +747,26 @@ const InteractiveWorld = (() => {
 
   // Is (x,y) solid rock the player collides with? Above the surface is air;
   // below it is rock except where a cave carves it away. Out-of-bounds is solid.
-  function isRockAt(caves, heights, x, y) {
+  function isRockAt(caves, heights, x, y, heavenHeights) {
     if (x < 0 || x > CFG.WORLD_WIDTH) return true;
-    if (y < getTerrainY(heights, x)) return false;
+    const surfY = getTerrainY(heights, x);
+    if (y < surfY) {
+      if (CFG.HEAVEN_ENABLED && heavenHeights) {
+        const hgY = getHeavenGroundY(heavenHeights, x);
+        if (y < hgY) return false;
+        if (y < hgY + CFG.HEAVEN_REALM_DEPTH) return true;
+      }
+      return false;
+    }
     if (caveCarved(caves, x, y)) return false;
     return true;
   }
 
   // Probe along the player's side for cave/rock walls (used for wall grab & kick).
-  function touchesWall(caves, heights, x, y, w, h, side) {
+  function touchesWall(caves, heights, x, y, w, h, side, heavenHeights) {
     const probeX = side < 0 ? x - 1 : x + w + 1;
     for (let oy = 6; oy < h - 2; oy += 7) {
-      if (isRockAt(caves, heights, probeX, y + oy)) return true;
+      if (isRockAt(caves, heights, probeX, y + oy, heavenHeights)) return true;
     }
     return false;
   }
@@ -661,9 +779,10 @@ const InteractiveWorld = (() => {
     return { cellX: Math.floor(fx / cell), cellY: Math.floor(fy / cell) };
   }
 
-  function inHeavenZone(playerY, playerH, surf, heavenEnabled, altitude) {
-    if (!heavenEnabled) return false;
-    return (playerY + playerH / 2) < surf - altitude;
+  function inHeavenZone(playerY, playerH, playerX, heavenHeights, heavenEnabled) {
+    if (!heavenEnabled || !heavenHeights) return false;
+    const hgY = getHeavenGroundY(heavenHeights, playerX);
+    return (playerY + playerH / 2) < hgY + 36;
   }
 
   // Sweat drain rate from depth heat + movement. Returns positive = drain water.
@@ -690,7 +809,7 @@ const InteractiveWorld = (() => {
 
   function heavenCamMinY() {
     if (!CFG.HEAVEN_ENABLED) return 0;
-    return -(CFG.HEAVEN_SKY_HEIGHT + 100);
+    return -(CFG.HEAVEN_REALM_ALTITUDE + CFG.HEAVEN_REALM_DEPTH + 280);
   }
 
   // Dig materials. `hardness` = chips needed to break through a spot AND the
@@ -1017,10 +1136,19 @@ const InteractiveWorld = (() => {
     }
   }
 
+  const PLAYER_ROSTER = [
+    { name: 'Sweaty', color: '#4ecdc4', style: 'sweaty' },
+    { name: 'Grit', color: '#e67e22', style: 'miner' },
+    { name: 'Bramble', color: '#6abf4b', style: 'scout' },
+    { name: 'Nimbus', color: '#b8a9ff', style: 'cloud' }
+  ];
+
   class Player {
-    constructor(x, y) {
+    constructor(x, y, slot = 0) {
       this.x = x;
       this.y = y;
+      this.slot = slot;
+      this.profile = PLAYER_ROSTER[slot] || PLAYER_ROSTER[0];
       this.vx = 0;
       this.vy = 0;
       this.w = CFG.PLAYER_W;
@@ -1085,7 +1213,7 @@ const InteractiveWorld = (() => {
       return false;
     }
 
-    update(keys, heights, platforms, portals, chests, caves, time) {
+    update(keys, heights, platforms, portals, chests, caves, time, heavenHeights) {
       const rubbing = keys.r && this.sticks >= 2;
       const moveX = rubbing ? 0 : ((keys.left || keys.a) ? -1 : (keys.right || keys.d) ? 1 : 0);
 
@@ -1122,28 +1250,25 @@ const InteractiveWorld = (() => {
       // --- horizontal move + cave-wall resolution ---
       this.x += this.vx;
       const midY = this.y + this.h / 2;
-      if (this.vx > 0 && isRockAt(caves, heights, this.x + this.w, midY)) {
+      if (this.vx > 0 && isRockAt(caves, heights, this.x + this.w, midY, heavenHeights)) {
         let g = 0;
-        while (isRockAt(caves, heights, this.x + this.w, midY) && g++ < 48) this.x -= 1;
+        while (isRockAt(caves, heights, this.x + this.w, midY, heavenHeights) && g++ < 48) this.x -= 1;
         this.vx = 0;
         if (!this.onGround && this._wallJumpIgnore === 0) this.wallSide = 1;
-      } else if (this.vx < 0 && isRockAt(caves, heights, this.x, midY)) {
+      } else if (this.vx < 0 && isRockAt(caves, heights, this.x, midY, heavenHeights)) {
         let g = 0;
-        while (isRockAt(caves, heights, this.x, midY) && g++ < 48) this.x += 1;
+        while (isRockAt(caves, heights, this.x, midY, heavenHeights) && g++ < 48) this.x += 1;
         this.vx = 0;
         if (!this.onGround && this._wallJumpIgnore === 0) this.wallSide = -1;
       }
 
-      // --- vertical move + surface/cave floor & ceiling resolution ---
-      // isRockAt treats the surface as the top of solid rock, so this single
-      // model lands the player on the ground AND on cave floors, lets them rise
-      // into ceilings, and drops them through carved entrance shafts.
+      // --- vertical move + surface/cave/heaven floor & ceiling resolution ---
       this.y += this.vy;
       const cxp = this.x + this.w / 2;
       if (this.vy >= 0) {
-        if (isRockAt(caves, heights, cxp, this.y + this.h)) {
+        if (isRockAt(caves, heights, cxp, this.y + this.h, heavenHeights)) {
           let g = 0;
-          while (isRockAt(caves, heights, cxp, this.y + this.h) && g++ < 240) this.y -= 1;
+          while (isRockAt(caves, heights, cxp, this.y + this.h, heavenHeights) && g++ < 240) this.y -= 1;
           this.vy = 0;
           this.onGround = true;
           this.canDoubleJump = true;
@@ -1151,9 +1276,9 @@ const InteractiveWorld = (() => {
           this.wallGrabTimer = 0;
           if (!this.wasOnGround) this.landDust = 8;
         }
-      } else if (isRockAt(caves, heights, cxp, this.y)) {
+      } else if (isRockAt(caves, heights, cxp, this.y, heavenHeights)) {
         let g = 0;
-        while (isRockAt(caves, heights, cxp, this.y) && g++ < 240) this.y += 1;
+        while (isRockAt(caves, heights, cxp, this.y, heavenHeights) && g++ < 240) this.y += 1;
         this.vy = 0;
       }
 
@@ -1174,8 +1299,8 @@ const InteractiveWorld = (() => {
 
       // Wall grab & slide — stick to cave walls in air, then jump to kick off.
       if (!this.onGround && this._wallJumpIgnore === 0) {
-        const touchL = touchesWall(caves, heights, this.x, this.y, this.w, this.h, -1);
-        const touchR = touchesWall(caves, heights, this.x, this.y, this.w, this.h, 1);
+        const touchL = touchesWall(caves, heights, this.x, this.y, this.w, this.h, -1, heavenHeights);
+        const touchR = touchesWall(caves, heights, this.x, this.y, this.w, this.h, 1, heavenHeights);
         if (touchL && !touchR) this.wallSide = -1;
         else if (touchR && !touchL) this.wallSide = 1;
         else if (touchL && touchR) this.wallSide = moveX !== 0 ? moveX : this.facing;
@@ -1201,8 +1326,8 @@ const InteractiveWorld = (() => {
 
       if (this.x < 0) { this.x = 0; this.vx = 0; }
       if (this.x + this.w > CFG.WORLD_WIDTH) { this.x = CFG.WORLD_WIDTH - this.w; this.vx = 0; }
-      if (CFG.HEAVEN_ENABLED && this.y < -CFG.HEAVEN_SKY_HEIGHT) {
-        this.y = -CFG.HEAVEN_SKY_HEIGHT;
+      if (CFG.HEAVEN_ENABLED && this.y < heavenCamMinY() - 60) {
+        this.y = heavenCamMinY() - 60;
         this.vy = 0;
       }
       if (this.y > CFG.WORLD_HEIGHT + 200) { this.y = 200; this.vy = 0; }
@@ -1252,11 +1377,11 @@ const InteractiveWorld = (() => {
     draw(ctx, cx, cy, playerColor) {
       const sx = this.x - cx;
       const sy = this.y - cy;
+      const profile = this.profile || PLAYER_ROSTER[0];
+      const bodyColor = playerColor || profile.color || '#4ecdc4';
+      const darkBodyColor = this.shadeColor(bodyColor, -0.4);
       ctx.save();
-      const bodyColor = playerColor || '#4ecdc4';
-      const darkBodyColor = playerColor ? this.shadeColor(playerColor, -0.4) : '#2d1b4e';
 
-      // Lean into the wall while grabbing.
       if (this.wallSide !== 0 && !this.onGround) {
         ctx.translate(this.wallSide * 2, 0);
       }
@@ -1271,31 +1396,107 @@ const InteractiveWorld = (() => {
         }
       }
 
-      ctx.fillStyle = darkBodyColor;
       const legAnim = this.isMoving && this.onGround ? Math.sin(this.walkFrame * 2) * 3 : 0;
-      ctx.fillRect(sx + 3, sy + this.h - 6, 5, 6 + legAnim);
-      ctx.fillRect(sx + this.w - 8, sy + this.h - 6, 5, 6 - legAnim);
+      const style = profile.style || 'sweaty';
 
-      ctx.fillStyle = bodyColor;
-      ctx.fillRect(sx + 1, sy + 10, this.w - 2, this.h - 14);
+      if (style === 'miner') {
+        ctx.fillStyle = '#3d2817';
+        ctx.fillRect(sx + 3, sy + this.h - 6, 5, 6 + legAnim);
+        ctx.fillRect(sx + this.w - 8, sy + this.h - 6, 5, 6 - legAnim);
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(sx + 1, sy + 12, this.w - 2, this.h - 16);
+        ctx.fillStyle = '#ffd479';
+        ctx.fillRect(sx - 2, sy - 1, this.w + 4, 7);
+        ctx.fillRect(sx + 1, sy - 4, this.w - 2, 4);
+        ctx.fillStyle = '#2a2a2a';
+        ctx.fillRect(sx + 2, sy + 4, this.w - 4, 4);
+        ctx.fillStyle = '#88ccff';
+        ctx.fillRect(sx + 4, sy + 5, 4, 2);
+        ctx.fillRect(sx + this.w - 8, sy + 5, 4, 2);
+      } else if (style === 'scout') {
+        ctx.fillStyle = darkBodyColor;
+        ctx.fillRect(sx + 3, sy + this.h - 6, 5, 6 + legAnim);
+        ctx.fillRect(sx + this.w - 8, sy + this.h - 6, 5, 6 - legAnim);
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(sx + 1, sy + 11, this.w - 2, this.h - 15);
+        ctx.fillStyle = '#2e5a28';
+        ctx.beginPath();
+        ctx.moveTo(sx + this.w / 2, sy - 6);
+        ctx.lineTo(sx - 1, sy + 8);
+        ctx.lineTo(sx + this.w + 1, sy + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#96ceb4';
+        ctx.beginPath();
+        ctx.ellipse(sx + this.w + 1, sy + 14, 4, 7, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#dff0d8';
+        const eyeX = this.facing === 1 ? sx + this.w - 7 : sx + 4;
+        ctx.fillRect(eyeX, sy + 5, 4, 3);
+        ctx.fillRect(eyeX + 6, sy + 5, 4, 3);
+      } else if (style === 'cloud') {
+        ctx.fillStyle = '#9f8fef';
+        ctx.fillRect(sx + 3, sy + this.h - 5, 5, 5 + legAnim);
+        ctx.fillRect(sx + this.w - 8, sy + this.h - 5, 5, 5 - legAnim);
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(sx + 2, sy + 12, this.w - 4, this.h - 15);
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.beginPath();
+        ctx.ellipse(sx + this.w / 2 - 4, sy + 2, 9, 6, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx + this.w / 2 + 5, sy + 4, 7, 5, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx + this.w / 2 - 1, sy + 6, 8, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#5b7cfa';
+        const eyeX = this.facing === 1 ? sx + this.w - 7 : sx + 4;
+        ctx.fillRect(eyeX, sy + 8, 4, 3);
+        ctx.fillRect(eyeX + 6, sy + 8, 4, 3);
+      } else {
+        // Sweaty — default explorer, always glistening.
+        ctx.fillStyle = darkBodyColor;
+        ctx.fillRect(sx + 3, sy + this.h - 6, 5, 6 + legAnim);
+        ctx.fillRect(sx + this.w - 8, sy + this.h - 6, 5, 6 - legAnim);
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(sx + 1, sy + 10, this.w - 2, this.h - 14);
+        ctx.fillStyle = this.shadeColor(bodyColor, 0.15);
+        ctx.fillRect(sx + 3, sy + 12, this.w - 6, 5);
+        ctx.fillStyle = '#ff6b6b';
+        ctx.fillRect(sx + 1, sy + 1, this.w - 2, 3);
+        ctx.fillStyle = '#2a9d8f';
+        ctx.fillRect(sx + 2, sy + 3, this.w - 4, 6);
+        const drip = Math.sin(this.walkFrame * 3) * 2;
+        ctx.fillStyle = 'rgba(69,183,209,0.85)';
+        ctx.fillRect(sx + 4, sy + 9 + drip, 2, 3);
+        ctx.fillRect(sx + this.w - 7, sy + 11 - drip, 2, 3);
+        ctx.fillRect(sx + this.w / 2, sy + 16 + drip * 0.5, 2, 4);
+        ctx.fillStyle = '#ff6b6b';
+        ctx.fillRect(sx + this.w / 2 - 4, sy + 14, 8, 3);
+      }
 
-      ctx.fillStyle = '#ff6b6b';
-      ctx.fillRect(sx + this.w / 2 - 4, sy + 14, 8, 3);
+      if (style !== 'cloud' && style !== 'scout' && style !== 'miner') {
+        ctx.fillStyle = '#ffffff';
+        const eyeX = this.facing === 1 ? sx + this.w - 7 : sx + 4;
+        ctx.fillRect(eyeX, sy + 3, 5, 4);
+        ctx.fillRect(eyeX + 6, sy + 3, 5, 4);
+        ctx.fillStyle = '#0d0d14';
+        ctx.fillRect(eyeX + 1, sy + 4, 2, 2);
+        ctx.fillRect(eyeX + 7, sy + 4, 2, 2);
+      } else if (style === 'miner') {
+        ctx.fillStyle = '#0d0d14';
+        const eyeX = this.facing === 1 ? sx + this.w - 7 : sx + 4;
+        ctx.fillRect(eyeX + 1, sy + 5, 2, 2);
+        ctx.fillRect(eyeX + 7, sy + 5, 2, 2);
+      } else if (style === 'scout') {
+        ctx.fillStyle = '#1a3020';
+        const eyeX = this.facing === 1 ? sx + this.w - 7 : sx + 4;
+        ctx.fillRect(eyeX + 1, sy + 6, 2, 2);
+        ctx.fillRect(eyeX + 7, sy + 6, 2, 2);
+      } else if (style === 'cloud') {
+        ctx.fillStyle = '#1a2040';
+        const eyeX = this.facing === 1 ? sx + this.w - 7 : sx + 4;
+        ctx.fillRect(eyeX + 1, sy + 9, 2, 2);
+        ctx.fillRect(eyeX + 7, sy + 9, 2, 2);
+      }
 
-      ctx.fillStyle = '#45b7d1';
-      ctx.fillRect(sx - 1, sy, this.w + 2, 12);
-      ctx.fillRect(sx + 1, sy - 2, this.w - 2, 3);
-
-      ctx.fillStyle = '#ffffff';
-      const eyeX = this.facing === 1 ? sx + this.w - 7 : sx + 4;
-      ctx.fillRect(eyeX, sy + 3, 5, 4);
-      ctx.fillRect(eyeX + 6, sy + 3, 5, 4);
-
-      ctx.fillStyle = '#0d0d14';
-      ctx.fillRect(eyeX + 1, sy + 4, 2, 2);
-      ctx.fillRect(eyeX + 7, sy + 4, 2, 2);
-
-      // Typing animation: little arms tapping out of rhythm in front of the body.
       if (this.isTyping) {
         const tf = this.typeFrame || 0;
         ctx.fillStyle = bodyColor;
@@ -1333,7 +1534,7 @@ const InteractiveWorld = (() => {
         jumpPressed3: false
       };
       this.players = [];
-      this._playerColors = ['#4ecdc4', '#ff9f43', '#a78bfa', '#f472b6'];
+      this._playerColors = PLAYER_ROSTER.map((p) => p.color);
       this._playerDigKeys = ['f', 'p2dig', 'p3dig', 'p4dig'];
       this._playerRubHints = ['R', ',', '[', 'Num3'];
       this._playerDigLabels = [
@@ -1442,10 +1643,11 @@ const InteractiveWorld = (() => {
       this.terrain = generateTerrain(CFG.WORLD_WIDTH);
       this.caves = generateCaves(this.terrain);
       const basePlatforms = generatePlatforms(this.terrain);
+      this.heavenTerrain = generateHeavenTerrain(this.terrain);
       const ascentPlatforms = generateAscentPlatforms(this.terrain, this.caves.entrances);
-      const cloudPlatforms = generateCloudPlatforms(this.terrain);
+      const cloudPlatforms = generateCloudPlatforms(this.terrain, this.heavenTerrain);
       this.platforms = basePlatforms.concat(ascentPlatforms, cloudPlatforms);
-      this.heavenTrees = generateHeavenTrees(this.terrain);
+      this.heavenTrees = generateHeavenTrees(this.heavenTerrain);
       this.portals = generatePortals(this.terrain);
       this.chests = generateChests(this.terrain);
       this.crystals = generateCrystals(this.terrain);
@@ -1462,7 +1664,7 @@ const InteractiveWorld = (() => {
       const startY = getTerrainY(this.terrain, 100);
       this.players = [];
       for (let i = 0; i < this.playerCount; i++) {
-        this.players.push(new Player(100 + i * 35, startY - CFG.PLAYER_H - 5));
+        this.players.push(new Player(100 + i * 35, startY - CFG.PLAYER_H - 5, i));
       }
       this.player = this.players[0];
 
@@ -1519,6 +1721,51 @@ const InteractiveWorld = (() => {
       return { x: x / n, y: y / n };
     }
 
+    _isNumpadKey(e) {
+      return e.location === 3 || (e.code && e.code.startsWith('Numpad'));
+    }
+
+    _handleP4Numpad(e, down) {
+      const code = e.code;
+      if (!code || !code.startsWith('Numpad')) return false;
+      if (['Numpad8', 'Numpad2', 'Numpad4', 'Numpad6', 'Numpad0'].includes(code)) {
+        e.preventDefault();
+      }
+      switch (code) {
+        case 'Numpad8':
+          this._setMultiKey('np8', down);
+          if (down) this.keys.jumpPressed3 = true;
+          return true;
+        case 'Numpad4':
+          this._setMultiKey('np4', down);
+          return true;
+        case 'Numpad2':
+          this._setMultiKey('np2', down);
+          return true;
+        case 'Numpad6':
+          this._setMultiKey('np6', down);
+          return true;
+        case 'Numpad0':
+          this._setMultiKey('np0', down);
+          if (down) this.keys.jumpPressed3 = true;
+          return true;
+        case 'Numpad1':
+          if (down) e.preventDefault();
+          this._setMultiKey('p4dig', down);
+          return true;
+        case 'Numpad3':
+          if (down) e.preventDefault();
+          this._setMultiKey('p4rub', down);
+          return true;
+        default:
+          return false;
+      }
+    }
+
+    _playerName(index) {
+      return (this.players[index]?.profile?.name) || PLAYER_ROSTER[index]?.name || ('P' + (index + 1));
+    }
+
     playerKeys(index) {
       if (this.playerCount <= 1) return this.keys;
       const k = this.keys;
@@ -1569,6 +1816,12 @@ const InteractiveWorld = (() => {
       if (down) {
         if (key === 'e') { this.interactWithPortal(); return; }
         if (key === 'm') { this.showMinimap = !this.showMinimap; return; }
+      }
+
+      // P4 numpad must be handled before P2 arrows — with NumLock off the numpad
+      // sends Arrow* key names that would otherwise steer player 2.
+      if (this.playerCount >= 4 && this._isNumpadKey(e)) {
+        if (this._handleP4Numpad(e, down)) return;
       }
 
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
@@ -1622,23 +1875,6 @@ const InteractiveWorld = (() => {
       }
       if (key === ']') { if (down) e.preventDefault(); this._setMultiKey('p3dig', down); return; }
       if (key === '[') { if (down) e.preventDefault(); this._setMultiKey('p3rub', down); return; }
-
-      // P4 — Numpad 8426 (↑/8 jumps) + 0
-      if (code === 'Numpad8') {
-        this._setMultiKey('np8', down);
-        if (down) this.keys.jumpPressed3 = true;
-        return;
-      }
-      if (code === 'Numpad4') { this._setMultiKey('np4', down); return; }
-      if (code === 'Numpad2') { this._setMultiKey('np2', down); return; }
-      if (code === 'Numpad6') { this._setMultiKey('np6', down); return; }
-      if (code === 'Numpad0') {
-        this._setMultiKey('np0', down);
-        if (down) this.keys.jumpPressed3 = true;
-        return;
-      }
-      if (code === 'Numpad1') { if (down) e.preventDefault(); this._setMultiKey('p4dig', down); return; }
-      if (code === 'Numpad3') { if (down) e.preventDefault(); this._setMultiKey('p4rub', down); return; }
     }
 
     nearestPlayer(x, y) {
@@ -1784,7 +2020,7 @@ const InteractiveWorld = (() => {
       const fy = p.y + p.h + (digDown ? 8 : -4);
 
       // Nothing to dig if it's already open cave/air.
-      if (!isRockAt(this.caves, this.terrain, fx, fy)) return;
+      if (!isRockAt(this.caves, this.terrain, fx, fy, this.heavenTerrain)) return;
 
       const mat = materialAt(this.terrain, fx, fy);
 
@@ -1850,7 +2086,7 @@ const InteractiveWorld = (() => {
       }
       this.heat = Math.max(this.heat || 0, Math.min(1, heat));
 
-      const heaven = inHeavenZone(p.y, p.h, surf, CFG.HEAVEN_ENABLED, CFG.HEAVEN_ALTITUDE);
+      const heaven = inHeavenZone(p.y, p.h, cxp, this.heavenTerrain, CFG.HEAVEN_ENABLED);
       if (heaven) this.inHeaven = true;
 
       if (heaven) {
@@ -1980,6 +2216,8 @@ const InteractiveWorld = (() => {
         this.keys.left = this.keys.right = this.keys.a = this.keys.d = this.keys.f = this.keys.r = false;
         this.keys.up = this.keys.w = this.keys.space = false;
         this.keys.p2dig = this.keys.p2rub = false;
+        this.keys.np2 = this.keys.np4 = this.keys.np6 = this.keys.np8 = this.keys.np0 = false;
+        this.keys.p4dig = this.keys.p4rub = false;
         this.player.isTyping = true;
         this.player.typeFrame = (this.player.typeFrame || 0) + 0.35;
         for (let i = 1; i < this.players.length; i++) this.players[i].isTyping = false;
@@ -1992,7 +2230,7 @@ const InteractiveWorld = (() => {
       for (let i = 0; i < this.players.length; i++) {
         const pl = this.players[i];
         const pk = this.playerKeys(i);
-        pl.update(pk, this.terrain, this.platforms, this.portals, this.chests, this.caves, this.time);
+        pl.update(pk, this.terrain, this.platforms, this.portals, this.chests, this.caves, this.time, this.heavenTerrain);
         const digging = this.keys[this._playerDigKeys[i]];
         if (digging) this.digAt(pl, pk);
         this.updateRubbing(pl, pk);
@@ -2145,7 +2383,7 @@ const InteractiveWorld = (() => {
       this.drawSky(ctx, W, H, cx, cy);
       this.drawHeavenClouds(ctx, cx, cy, W, H);
       this.drawBgMountains(ctx, cx, cy, W, H);
-      this.drawHeavenTrees(ctx, cx, cy, W, H);
+      this.drawHeavenRealm(ctx, cx, cy, W, H);
       this.drawTerrain(ctx, cx, cy, W, H);
       this.drawCaves(ctx, cx, cy, W, H);
       this.drawCaveItems(ctx, cx, cy, W, H);
@@ -2157,6 +2395,7 @@ const InteractiveWorld = (() => {
       this.drawFires(ctx, cx, cy, W, H);
       this.drawPortals(ctx, cx, cy, W, H);
       this.drawCreatures(ctx, cx, cy, W, H);
+      this.drawHeavenTrees(ctx, cx, cy, W, H);
       for (let i = 0; i < this.players.length; i++) {
         const color = this._playerColors[i] || this._playerColor;
         this.players[i].draw(ctx, cx, cy, color);
@@ -2214,7 +2453,8 @@ const InteractiveWorld = (() => {
           ctx.font = '11px system-ui, sans-serif';
           ctx.textBaseline = 'middle';
           const rubHint = this.playerCount > 1 ? (this._playerRubHints[i] || 'R') : 'R';
-          ctx.fillText('❄️ ' + Math.ceil(p.freeze), x + 6, y + bh / 2 + 1);
+          const freezeLabel = this.playerCount > 1 ? (this._playerName(i) + ' ') : '';
+          ctx.fillText(freezeLabel + '❄️ ' + Math.ceil(p.freeze), x + 6, y + bh / 2 + 1);
           if (p.sticks >= 2) {
             ctx.fillStyle = color;
             ctx.fillText(rubHint + ': rub', x + bw + 12, y + bh / 2 + 1);
@@ -2227,7 +2467,7 @@ const InteractiveWorld = (() => {
           ctx.fillStyle = 'rgba(255,255,255,0.85)';
           ctx.font = '11px system-ui, sans-serif';
           ctx.textBaseline = 'middle';
-          const label = this.playerCount > 1 ? ('P' + (i + 1) + ' ') : '';
+          const label = this.playerCount > 1 ? (this._playerName(i) + ' ') : '';
           ctx.fillText(label + '💧 ' + Math.ceil(p.water), x + 6, y + bh / 2 + 1);
           if (i === 0 && this.heat > 0.55) {
             ctx.fillStyle = '#ff8b3a';
@@ -2242,7 +2482,7 @@ const InteractiveWorld = (() => {
           ctx.fillStyle = color;
           ctx.font = '9px system-ui, sans-serif';
           ctx.textAlign = 'right';
-          ctx.fillText('P' + (i + 1), x + bw - 4, y - 5);
+          ctx.fillText(this._playerName(i), x + bw - 4, y - 5);
           ctx.textAlign = 'left';
         }
         y += bh + 10;
@@ -2411,21 +2651,26 @@ const InteractiveWorld = (() => {
         starAlpha = 0.5 + t * 0.2;
       }
 
-      // Blend toward bright cloudy heaven palette when camera is high in the sky.
+      // Sky climb brightens toward the abyss; the heaven realm goes full golden.
       if (CFG.HEAVEN_ENABLED) {
         const surf = getTerrainY(this.terrain, cx + W * 0.5);
-        const heavenBlend = Math.max(0, Math.min(1, (surf - 200 - cy) / 180));
+        const heavenGround = surf - CFG.HEAVEN_REALM_ALTITUDE;
+        const climbBlend = Math.max(0, Math.min(0.5, (surf - CFG.HEAVEN_SKY_START - 60 - cy) / (CFG.HEAVEN_SKY_CLIMB + 260)));
+        const realmBlend = Math.max(0, Math.min(1, (heavenGround + 180 - cy) / 300));
+        const heavenBlend = Math.max(climbBlend, realmBlend);
         if (heavenBlend > 0) {
-          r1 = r1 + (232 - r1) * heavenBlend;
-          g1 = g1 + (240 - g1) * heavenBlend;
-          b1 = b1 + (255 - b1) * heavenBlend;
-          r2 = r2 + (255 - r2) * heavenBlend;
-          g2 = g2 + (248 - g2) * heavenBlend;
-          b2 = b2 + (240 - b2) * heavenBlend;
-          r3 = r3 + (248 - r3) * heavenBlend;
-          g3 = g3 + (240 - g3) * heavenBlend;
-          b3 = b3 + (230 - b3) * heavenBlend;
-          starAlpha *= (1 - heavenBlend);
+          const hr = 248; const hg = 252; const hb = 255;
+          const gr = 255; const gg = 230; const gb = 160;
+          r1 = r1 + (hr - r1) * heavenBlend;
+          g1 = g1 + (hg - g1) * heavenBlend;
+          b1 = b1 + (hb - b1) * heavenBlend;
+          r2 = r2 + (gr - r2) * heavenBlend * 0.4;
+          g2 = g2 + (gg - g2) * heavenBlend * 0.4;
+          b2 = b2 + (gb - b2) * heavenBlend * 0.4;
+          r3 = r3 + (hr - r3) * heavenBlend;
+          g3 = g3 + (hg - g3) * heavenBlend;
+          b3 = b3 + (hb - b3) * heavenBlend;
+          starAlpha *= (1 - heavenBlend * 0.85);
         }
       }
 
@@ -2542,6 +2787,7 @@ const InteractiveWorld = (() => {
 
       for (let x = startX; x <= endX; x += step) {
         const ty = getTerrainY(this.terrain, x);
+        if (this.caves && caveCarved(this.caves, x, ty + 2)) continue;
         ctx.fillStyle = bc(x, 'grass');
         ctx.fillRect(x - cx, ty - cy, step + 1, 4);
       }
@@ -2568,6 +2814,20 @@ const InteractiveWorld = (() => {
       ctx.save();
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
+
+      // Clip to below the terrain surface so round tunnel caps do not dome above ground.
+      const clipStep = 4;
+      const clipStartX = Math.max(0, Math.floor(cx / clipStep) * clipStep);
+      const clipEndX = Math.min(CFG.WORLD_WIDTH, cx + W + clipStep);
+      ctx.beginPath();
+      ctx.moveTo(clipStartX - cx - 1, H + 10);
+      for (let x = clipStartX; x <= clipEndX; x += clipStep) {
+        const ty = getTerrainY(this.terrain, x);
+        ctx.lineTo(x - cx, ty - cy);
+      }
+      ctx.lineTo(clipEndX - cx + 1, H + 10);
+      ctx.closePath();
+      ctx.clip();
 
       const digHoles = this.caves.digHoles || [];
       const rooms = this.caves.chambers.concat(this.caves.pockets || []);
@@ -2834,24 +3094,98 @@ const InteractiveWorld = (() => {
       ctx.restore();
     }
 
+    drawHeavenRealm(ctx, cx, cy, W, H) {
+      if (!CFG.HEAVEN_ENABLED || !this.heavenTerrain) return;
+      const surf = getTerrainY(this.terrain, cx + W / 2);
+      const heavenRef = surf - CFG.HEAVEN_REALM_ALTITUDE;
+      if (cy > heavenRef + CFG.HEAVEN_REALM_DEPTH + H * 0.6) return;
+
+      const step = 6;
+      const startX = Math.max(0, Math.floor(cx / step) * step);
+      const endX = Math.min(CFG.WORLD_WIDTH, cx + W + step);
+      const depth = CFG.HEAVEN_REALM_DEPTH;
+
+      ctx.save();
+
+      for (let x = startX; x <= endX; x += step * 4) {
+        const hgY = getHeavenGroundY(this.heavenTerrain, x);
+        const sx = x - cx;
+        const sy = hgY - cy;
+        if (sy < -220 || sy > H + depth + 100) continue;
+        const glow = ctx.createRadialGradient(sx, sy + 50, 0, sx, sy + 50, 110);
+        glow.addColorStop(0, 'rgba(255,248,210,0.4)');
+        glow.addColorStop(1, 'transparent');
+        ctx.fillStyle = glow;
+        ctx.fillRect(sx - 110, sy - 40, 220, 220);
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(startX - cx, H + 30);
+      for (let x = startX; x <= endX; x += step) {
+        ctx.lineTo(x - cx, getHeavenGroundY(this.heavenTerrain, x) - cy);
+      }
+      ctx.lineTo(endX - cx, H + 30);
+      ctx.closePath();
+      const topY = heavenRef - cy;
+      const bodyGrad = ctx.createLinearGradient(0, topY, 0, topY + depth);
+      bodyGrad.addColorStop(0, '#fffaf0');
+      bodyGrad.addColorStop(0.06, '#f0f8ff');
+      bodyGrad.addColorStop(0.25, '#dceeff');
+      bodyGrad.addColorStop(0.65, '#c0d8f8');
+      bodyGrad.addColorStop(1, '#98b8e8');
+      ctx.fillStyle = bodyGrad;
+      ctx.fill();
+
+      for (let x = startX; x <= endX; x += step) {
+        const ty = getHeavenGroundY(this.heavenTerrain, x);
+        ctx.fillStyle = '#fff8f0';
+        ctx.fillRect(x - cx, ty - cy, step + 1, 6);
+        ctx.fillStyle = 'rgba(255,212,121,0.85)';
+        ctx.fillRect(x - cx, ty - cy, step + 1, 2);
+      }
+
+      for (let x = startX; x <= endX; x += step * 5) {
+        const ty = getHeavenGroundY(this.heavenTerrain, x) + depth * 0.3;
+        const sx = x - cx;
+        const sy = ty - cy + 24;
+        ctx.globalAlpha = 0.32;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, 58 + Math.sin(x * 0.008 + this.time * 0.5) * 14, 30, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx + 36, sy + 10, 40, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.restore();
+    }
+
     drawHeavenTrees(ctx, cx, cy, W, H) {
       if (!this.heavenTrees || !CFG.HEAVEN_ENABLED) return;
+      const surf = getTerrainY(this.terrain, cx + W / 2);
+      const heavenRef = surf - CFG.HEAVEN_REALM_ALTITUDE;
+      if (cy > heavenRef + 450) return;
       for (const t of this.heavenTrees) {
         const tx = t.x - cx;
         const baseY = t.baseY - cy;
         const topY = t.topY - cy;
-        if (tx < -60 || tx > W + 60) continue;
+        if (tx < -90 || tx > W + 90 || baseY < -120 || baseY > H + 60) continue;
         ctx.save();
-        ctx.fillStyle = '#5a3a20';
+        ctx.fillStyle = 'rgba(255,220,150,0.22)';
+        ctx.beginPath();
+        ctx.ellipse(tx, baseY + 6, t.canopyR * 0.75, 11, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#d8cce8';
         ctx.fillRect(tx - t.trunkW / 2, topY, t.trunkW, baseY - topY);
         ctx.fillStyle = t.color;
+        ctx.shadowColor = t.glow || '#ffd479';
+        ctx.shadowBlur = 14;
         ctx.beginPath();
         ctx.arc(tx, topY, t.canopyR, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = 'rgba(90,180,90,0.5)';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
         ctx.beginPath();
-        ctx.arc(tx - t.canopyR * 0.3, topY - 8, t.canopyR * 0.6, 0, Math.PI * 2);
-        ctx.arc(tx + t.canopyR * 0.3, topY - 5, t.canopyR * 0.55, 0, Math.PI * 2);
+        ctx.arc(tx - t.canopyR * 0.28, topY - t.canopyR * 0.22, t.canopyR * 0.42, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
@@ -2860,17 +3194,39 @@ const InteractiveWorld = (() => {
     drawHeavenClouds(ctx, cx, cy, W, H) {
       if (!CFG.HEAVEN_ENABLED) return;
       const surf = getTerrainY(this.terrain, cx + W / 2);
-      if (cy > surf - 120) return;
+      const heavenRef = surf - CFG.HEAVEN_REALM_ALTITUDE;
+      if (cy < heavenRef - 60) {
+        ctx.save();
+        ctx.globalAlpha = 0.14;
+        const glow = ctx.createRadialGradient(W * 0.5, H * 0.35, 0, W * 0.5, H * 0.35, W * 0.65);
+        glow.addColorStop(0, '#fff8e0');
+        glow.addColorStop(1, 'transparent');
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+        return;
+      }
+      if (cy > surf - 40) return;
+      const depth = Math.max(0, Math.min(1, (surf - CFG.HEAVEN_SKY_START - 100 - cy) / (CFG.HEAVEN_SKY_CLIMB + CFG.HEAVEN_REALM_ALTITUDE * 0.15)));
       ctx.save();
-      for (let i = 0; i < 8; i++) {
-        const bx = ((i * 620 + this.time * 12) % (W + 400)) - 200;
-        const by = (i * 47) % (H * 0.5);
-        ctx.globalAlpha = 0.25 + (i % 3) * 0.08;
-        ctx.fillStyle = '#fff8f0';
+      const count = 6 + Math.floor(depth * 10);
+      for (let i = 0; i < count; i++) {
+        const bx = ((i * 520 + this.time * (10 + depth * 8)) % (W + 500)) - 250;
+        const by = (i * 53) % (H * 0.65);
+        ctx.globalAlpha = (0.18 + (i % 3) * 0.07) * (0.5 + depth * 0.5);
+        ctx.fillStyle = depth > 0.55 ? '#fff8e8' : '#fff8f0';
         ctx.beginPath();
-        ctx.ellipse(bx, by, 70 + i * 8, 28 + i * 3, 0, 0, Math.PI * 2);
-        ctx.ellipse(bx + 40, by + 8, 50, 22, 0, 0, Math.PI * 2);
+        ctx.ellipse(bx, by, 75 + i * 9, 30 + i * 3, 0, 0, Math.PI * 2);
+        ctx.ellipse(bx + 42, by + 8, 52, 24, 0, 0, Math.PI * 2);
         ctx.fill();
+      }
+      if (depth > 0.45) {
+        ctx.globalAlpha = 0.12 * depth;
+        const glow = ctx.createRadialGradient(W * 0.5, H * 0.2, 0, W * 0.5, H * 0.2, W * 0.55);
+        glow.addColorStop(0, '#fff8d0');
+        glow.addColorStop(1, 'transparent');
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, W, H);
       }
       ctx.restore();
     }
@@ -3072,9 +3428,9 @@ const InteractiveWorld = (() => {
       const weatherIcon = this.weatherState === 'rain' ? '🌧' : this.weatherState === 'snow' ? '❄' : '☀';
       const moveHints = {
         1: 'WASD:Move Space:Jump',
-        2: 'P1: WASD+Space/W · P2: Arrows (↑ jump)+RCtrl',
-        3: 'P1: WASD+Space/W · P2: Arrows (↑ jump) · P3: IJKL (I jump)+=',
-        4: 'P1: WASD+Space/W · P2: Arrows (↑ jump) · P3: IJKL · P4: Num8426 (8 jump)+0'
+        2: `${this._playerName(0)}: WASD+Space/W · ${this._playerName(1)}: Arrows (↑ jump)+RCtrl`,
+        3: `${this._playerName(0)}: WASD+Space/W · ${this._playerName(1)}: Arrows (↑ jump) · ${this._playerName(2)}: IJKL (I jump)+=`,
+        4: `${this._playerName(0)}: WASD · ${this._playerName(1)}: Arrows · ${this._playerName(2)}: IJKL · ${this._playerName(3)}: Num8426 (8 jump)+0`
       };
       const moveHint = moveHints[this.playerCount] || moveHints[1];
       ctx.fillText(`${weatherIcon} ${moveHint} E:Interact M:Map`, 14, hudY);
@@ -3113,7 +3469,7 @@ const InteractiveWorld = (() => {
       }
 
       const cen = this.playersCenter();
-      const biome = this._biomePalette || getBiome(cen.x);
+      const biome = this._biomePalette || getBiomeAt(cen.x, cen.y, this.terrain, this.heavenTerrain);
       const biomeName = biome.name || 'custom';
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.font = '10px monospace';
@@ -3299,7 +3655,8 @@ const InteractiveWorld = (() => {
         forest: { grass: '#4a9e6b', dirt: '#3a7d5a', ground: '#2d6b4a', accent: '#6abf4a' },
         desert: { grass: '#c4a65a', dirt: '#a08040', ground: '#8a6e30', accent: '#d4b66a' },
         tundra: { grass: '#8ab0c4', dirt: '#6a8a9e', ground: '#5a7a8e', accent: '#aac4d4' },
-        plains: { grass: '#5aaa6b', dirt: '#4a8a5a', ground: '#3a7a4a', accent: '#7aca8b' }
+        plains: { grass: '#5aaa6b', dirt: '#4a8a5a', ground: '#3a7a4a', accent: '#7aca8b' },
+        heaven: { grass: '#f0f8ff', dirt: '#dceeff', ground: '#c8e0ff', accent: '#ffd479' }
       };
       this._biomePalette = palettes[biome] || palettes.forest;
     }
@@ -3321,10 +3678,12 @@ const InteractiveWorld = (() => {
   }
 
   return {
-    WorldEngine, Player, generateTerrain, getTerrainY, generateCaves, caveCarved, isRockAt, touchesWall,
+    PLAYER_ROSTER,
+    WorldEngine, Player, generateTerrain, getTerrainY, getBiome, getBiomeAt,
+    generateHeavenTerrain, getHeavenGroundY, generateCaves, caveCarved, isRockAt, touchesWall,
     materialAt, MATERIALS, digCellKey, DIG_CELL, inHeavenZone, computeSweatRate,
     generateShovels, generateCaveShovels, generateSticks, generateCaveSticks,
-    generateAscentPlatforms, generateCloudPlatforms, layoutCaveProps, roomFloorY
+    generateAscentPlatforms, generateCloudPlatforms, generateGateClouds, layoutCaveProps, roomFloorY
   };
 })();
 

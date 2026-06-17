@@ -1,10 +1,14 @@
 const InteractiveWorld = require('./world-engine.js');
+const { configToDefaults, validateConfig } = require('../../cavesweat/config.js');
+const cavesweatWorld = require('../../cavesweat/world.json');
 
 const {
   generateTerrain, generateCaves, caveCarved, isRockAt, materialAt, digCellKey,
   inHeavenZone, computeSweatRate, generateShovels, generateCaveShovels,
   generateSticks, generateCaveSticks,
-  generateAscentPlatforms, generateCloudPlatforms, touchesWall
+  generateAscentPlatforms, generateCloudPlatforms, generateGateClouds,
+  generateHeavenTerrain, getHeavenGroundY, getBiomeAt, touchesWall,
+  layoutCaveProps, roomFloorY
 } = InteractiveWorld;
 
 describe('cave system', () => {
@@ -74,6 +78,16 @@ describe('cave system', () => {
     expect(caveCarved(caves, c.x + 5000, c.y)).toBe(false);
   });
 
+  it('keeps entrance shafts level with the surface', () => {
+    for (const ex of caves.entrances) {
+      const surf = InteractiveWorld.getTerrainY(terrain, ex);
+      const shaft = caves.tunnels.find((t) => t.entrance && Math.abs(t.ax - ex) < 80);
+      expect(shaft).toBeDefined();
+      expect(shaft.ay).toBeGreaterThanOrEqual(surf - 2);
+      expect(shaft.ay).toBeLessThanOrEqual(surf + 2);
+    }
+  });
+
   it('treats above-ground as air and deep rock as solid', () => {
     const x = 4800; // far from cave entrance shafts
     const surf = InteractiveWorld.getTerrainY(terrain, x);
@@ -101,10 +115,48 @@ describe('survival and heaven helpers', () => {
   const terrain = generateTerrain(5000);
   const surf = InteractiveWorld.getTerrainY(terrain, 200);
 
-  it('detects heaven zone above the altitude threshold', () => {
-    expect(inHeavenZone(surf - 300, 28, surf, true, 280)).toBe(true);
-    expect(inHeavenZone(surf - 100, 28, surf, true, 280)).toBe(false);
-    expect(inHeavenZone(surf - 300, 28, surf, false, 280)).toBe(false);
+  it('detects heaven realm only on the solid heaven domain', () => {
+    const heavenTerrain = generateHeavenTerrain(terrain);
+    const hgY = getHeavenGroundY(heavenTerrain, 200);
+    expect(inHeavenZone(hgY - 40, 28, 200, heavenTerrain, true)).toBe(true);
+    expect(inHeavenZone(surf - 400, 28, 200, heavenTerrain, true)).toBe(false);
+    expect(inHeavenZone(hgY - 40, 28, 200, heavenTerrain, false)).toBe(false);
+  });
+
+  it('lands on heaven solid ground via isRockAt', () => {
+    const heavenTerrain = generateHeavenTerrain(terrain);
+    const hgY = getHeavenGroundY(heavenTerrain, 500);
+    expect(isRockAt(null, terrain, 500, hgY + 10, heavenTerrain)).toBe(true);
+    expect(isRockAt(null, terrain, 500, hgY - 30, heavenTerrain)).toBe(false);
+  });
+
+  it('reports surface biome below heaven realm', () => {
+    const heavenTerrain = generateHeavenTerrain(terrain);
+    const biome = getBiomeAt(200, surf - 50, terrain, heavenTerrain);
+    expect(biome.name).not.toBe('heaven');
+  });
+
+  it('reports heaven biome on the solid realm', () => {
+    const heavenTerrain = generateHeavenTerrain(terrain);
+    const hgY = getHeavenGroundY(heavenTerrain, 200);
+    const biome = getBiomeAt(200, hgY - 20, terrain, heavenTerrain);
+    expect(biome.name).toBe('heaven');
+  });
+
+  it('skips cloud parkour when heaven is disabled in test defaults', () => {
+    expect(generateCloudPlatforms(terrain, null)).toEqual([]);
+    expect(generateAscentPlatforms(terrain, [])).toEqual([]);
+  });
+
+  it('maps Cavesweat world.json heaven into sky climb + realm config', () => {
+    const d = configToDefaults(cavesweatWorld);
+    expect(d.WORLD_HEAVEN_ENABLED).toBe(true);
+    expect(d.WORLD_HEAVEN_SKY_CLIMB).toBe(1050);
+    expect(d.WORLD_HEAVEN_REALM_ALTITUDE).toBe(2600);
+    expect(d.WORLD_HEAVEN_REALM_DEPTH).toBe(360);
+    expect(d.WORLD_HEAVEN_LAYERS).toBe(10);
+    expect(d.WORLD_HEAVEN_CLOUD_PLATFORMS).toBe(0);
+    expect(validateConfig(cavesweatWorld)).toEqual([]);
   });
 
   it('sweats more when running underground than standing still on surface', () => {

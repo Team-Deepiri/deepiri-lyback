@@ -32,11 +32,14 @@
   },
   "heaven": {
     "enabled": true,
-    "altitude": 280,
-    "skyHeight": 400,
+    "skyStart": 180,
+    "skyClimb": 1050,
+    "realmAltitude": 2600,
+    "realmDepth": 360,
+    "layers": 10,
     "ascentPlatforms": 55,
-    "cloudPlatforms": 24,
-    "trees": 10,
+    "cloudPlatforms": 0,
+    "trees": 16,
     "freezeRate": 0.12
   },
   "survival": {

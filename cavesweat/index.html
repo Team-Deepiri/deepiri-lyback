@@ -92,6 +92,51 @@
       color: #07070d;
     }
     .settings-actions .players-btn:hover { opacity: 0.92; }
+    .settings-actions .remove-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 107, 107, 0.45);
+      color: #ff9f9f;
+    }
+    .settings-actions .remove-btn:hover {
+      border-color: rgba(255, 107, 107, 0.75);
+      color: #ff6b6b;
+    }
+    .remove-picker {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .remove-picker[hidden] { display: none !important; }
+    .remove-picker .remove-label {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.5);
+      text-align: center;
+    }
+    .remove-slots {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+    .player-slot-btn {
+      min-width: 44px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 107, 107, 0.4);
+      background: rgba(255, 107, 107, 0.12);
+      color: #ffb4b4;
+      font: 600 0.85rem system-ui, sans-serif;
+      cursor: pointer;
+    }
+    .player-slot-btn:hover {
+      background: rgba(255, 107, 107, 0.28);
+      border-color: #ff6b6b;
+      color: #fff;
+    }
     .settings-actions .close-btn {
       background: transparent;
       border: 1px solid rgba(255,255,255,0.15);
@@ -124,6 +169,11 @@
       <p class="sub">Pause the game, change players, or reset the world.</p>
       <div class="settings-actions">
         <button id="playersToggleBtn" class="players-btn" type="button">👥 Add 2nd player</button>
+        <button id="removePlayerBtn" class="remove-btn" type="button" hidden>➖ Remove player</button>
+        <div id="removePlayerPicker" class="remove-picker" hidden>
+          <span class="remove-label">Which player should leave?</span>
+          <div id="removePlayerSlots" class="remove-slots"></div>
+        </div>
         <button id="resetBtn" class="reset-btn" type="button">↻ Reset world</button>
         <button id="closeSettingsBtn" class="close-btn" type="button">Close</button>
       </div>
@@ -143,6 +193,9 @@
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsPanel = document.getElementById('settingsPanel');
     const playersToggleBtn = document.getElementById('playersToggleBtn');
+    const removePlayerBtn = document.getElementById('removePlayerBtn');
+    const removePlayerPicker = document.getElementById('removePlayerPicker');
+    const removePlayerSlots = document.getElementById('removePlayerSlots');
     const resetBtn = document.getElementById('resetBtn');
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     let engine = null;
@@ -150,12 +203,15 @@
     let inGame = false;
     let playerCount = Math.min(4, Math.max(1, parseInt(localStorage.getItem(PLAYER_COUNT_KEY) || '1', 10) || 1));
 
+    const PLAYER_NAMES = ['Sweaty', 'Grit', 'Bramble', 'Nimbus'];
+    const PLAYER_CONTROLS = ['WASD', 'Arrows', 'IJKL', 'Numpad'];
+
     function updateHudText() {
       const hints = {
         1: 'WASD / Arrows: Move &nbsp;|&nbsp; Space / W / ↑: Jump &nbsp;|&nbsp; F: Dig &nbsp;|&nbsp; R: Rub &nbsp;|&nbsp; Esc or ⚙: Settings',
-        2: 'P1: WASD+Space/W &nbsp;|&nbsp; P2: Arrows+RCtrl (↑ jump) &nbsp;|&nbsp; Esc or ⚙: Settings',
-        3: 'P1: WASD+Space/W &nbsp;|&nbsp; P2: Arrows (↑ jump) &nbsp;|&nbsp; P3: IJKL (I jump) &nbsp;|&nbsp; Esc or ⚙: Settings',
-        4: 'P1: WASD+Space/W &nbsp;|&nbsp; P2: Arrows (↑ jump) &nbsp;|&nbsp; P3: IJKL &nbsp;|&nbsp; P4: Num8426 (8 jump) &nbsp;|&nbsp; Esc or ⚙: Settings'
+        2: `${PLAYER_NAMES[0]}: WASD+Space/W &nbsp;|&nbsp; ${PLAYER_NAMES[1]}: Arrows+RCtrl (↑ jump) &nbsp;|&nbsp; Esc or ⚙: Settings`,
+        3: `${PLAYER_NAMES[0]}: WASD+Space/W &nbsp;|&nbsp; ${PLAYER_NAMES[1]}: Arrows (↑ jump) &nbsp;|&nbsp; ${PLAYER_NAMES[2]}: IJKL (I jump) &nbsp;|&nbsp; Esc or ⚙: Settings`,
+        4: `${PLAYER_NAMES[0]}: WASD &nbsp;|&nbsp; ${PLAYER_NAMES[1]}: Arrows &nbsp;|&nbsp; ${PLAYER_NAMES[2]}: IJKL &nbsp;|&nbsp; ${PLAYER_NAMES[3]}: Num8426 (8 jump) &nbsp;|&nbsp; Esc or ⚙: Settings`
       };
       hudEl.innerHTML = hints[playerCount] || hints[1];
     }
@@ -169,18 +225,39 @@
       }
     }
 
+    function updateRemovePlayerUI() {
+      removePlayerBtn.hidden = playerCount <= 1;
+      removePlayerPicker.hidden = true;
+      removePlayerSlots.innerHTML = '';
+      const roster = window.InteractiveWorld?.PLAYER_ROSTER;
+      for (let i = 1; i <= playerCount; i++) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'player-slot-btn';
+        const name = roster?.[i - 1]?.name || PLAYER_NAMES[i - 1] || ('P' + i);
+        const controls = PLAYER_CONTROLS[i - 1] || '';
+        btn.title = 'Remove ' + name + (controls ? ' (' + controls + ')' : '');
+        btn.textContent = name;
+        btn.addEventListener('click', () => removePlayer(i));
+        removePlayerSlots.appendChild(btn);
+      }
+    }
+
     function setPlayerCount(n) {
       playerCount = Math.min(4, Math.max(1, n | 0));
       localStorage.setItem(PLAYER_COUNT_KEY, String(playerCount));
       updatePlayersButton();
       updateHudText();
+      updateRemovePlayerUI();
     }
 
     updateHudText();
     updatePlayersButton();
+    updateRemovePlayerUI();
 
     function openSettings() {
       if (!engine) return;
+      removePlayerPicker.hidden = true;
       if (engine.isRunning) {
         engine.stop();
         engine._settingsPaused = true;
@@ -227,6 +304,13 @@
 
     function cyclePlayers() {
       setPlayerCount(playerCount >= 4 ? 1 : playerCount + 1);
+      restartGame();
+    }
+
+    function removePlayer(slot) {
+      if (playerCount <= 1 || slot < 1 || slot > playerCount) return;
+      setPlayerCount(playerCount - 1);
+      removePlayerPicker.hidden = true;
       restartGame();
     }
 
@@ -277,6 +361,7 @@
         overlay.classList.add('hide');
         settingsBtn.classList.add('visible');
         inGame = true;
+        updateRemovePlayerUI();
       }).catch((e) => {
         errEl.textContent = e.message;
       });
@@ -308,6 +393,9 @@
 
     settingsBtn.addEventListener('click', toggleSettings);
     playersToggleBtn.addEventListener('click', cyclePlayers);
+    removePlayerBtn.addEventListener('click', () => {
+      removePlayerPicker.hidden = !removePlayerPicker.hidden;
+    });
     closeSettingsBtn.addEventListener('click', closeSettings);
     resetBtn.addEventListener('click', resetGame);
     settingsPanel.addEventListener('click', (e) => {
