@@ -45,7 +45,7 @@
       pointer-events: none;
     }
     #settingsBtn {
-      position: fixed; top: 14px; right: 16px; z-index: 100;
+      position: fixed; top: 14px; right: 16px; z-index: 1000;
       display: none; gap: 6px; align-items: center;
       padding: 8px 14px 8px 12px;
       border: 1px solid rgba(78, 205, 196, 0.5);
@@ -57,7 +57,7 @@
     #settingsBtn:hover { border-color: #4ecdc4; color: #4ecdc4; }
     #settingsBtn.visible { display: flex; }
     #settingsPanel {
-      position: fixed; inset: 0; z-index: 200;
+      position: fixed; inset: 0; z-index: 2000;
       display: none; align-items: center; justify-content: center;
       background: rgba(7, 7, 13, 0.72);
     }
@@ -209,21 +209,6 @@
       if (inGame && engine) openSettings();
     }
 
-    window.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' && e.code !== 'Escape') return;
-      if (settingsPanel.classList.contains('open')) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        closeSettings();
-        return;
-      }
-      if (!inGame || !engine) return;
-      if (engine.computerMode) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      openSettings();
-    }, true);
-
     function restartGame() {
       if (!pendingRuntime) return;
       settingsPanel.classList.remove('open');
@@ -255,10 +240,16 @@
 
     function loadEngineScript() {
       return new Promise((resolve, reject) => {
-        if (window.InteractiveWorld) { resolve(); return; }
+        if (window.InteractiveWorld?.WorldEngine) { resolve(); return; }
         const s = document.createElement('script');
-        s.src = '../src/interactive-background/world-engine.js';
-        s.onload = resolve;
+        s.src = '/src/interactive-background/world-engine.js';
+        s.onload = () => {
+          if (!window.InteractiveWorld?.WorldEngine) {
+            reject(new Error('World engine loaded but did not initialize — hard refresh (Ctrl+Shift+R).'));
+            return;
+          }
+          resolve();
+        };
         s.onerror = () => reject(new Error('Could not load the world engine.'));
         document.head.appendChild(s);
       });
@@ -276,7 +267,8 @@
         engine = new window.InteractiveWorld.WorldEngine(canvas, {
           interactive: true,
           playerCount,
-          onSettingsOpen: openSettings
+          onSettingsOpen: openSettings,
+          onSettingsToggle: toggleSettings
         });
         if (engine.applyWorldConfig) engine.applyWorldConfig(runtime.apply);
         engine.start();

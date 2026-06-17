@@ -1324,6 +1324,7 @@ const InteractiveWorld = (() => {
       this.playerCount = Math.min(4, Math.max(1, rawCount | 0));
       this.onEscape = options.onEscape || null;
       this.onSettingsOpen = options.onSettingsOpen || options.onEscape || null;
+      this.onSettingsToggle = options.onSettingsToggle || null;
       this.keys = {
         jumpPressed: false,
         jumpPressed0: false,
@@ -1645,6 +1646,12 @@ const InteractiveWorld = (() => {
         // the player. Escape leaves the computer.
         if (this.computerMode) {
           if (key === 'escape') this.exitComputer();
+          return;
+        }
+        if (key === 'escape' && this.onSettingsToggle) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          this.onSettingsToggle();
           return;
         }
         if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key)) e.preventDefault();
@@ -3307,6 +3314,12 @@ const InteractiveWorld = (() => {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = InteractiveWorld;
+}
+
+// Dynamic <script> injection (Cavesweat, viewer) uses window.InteractiveWorld;
+// top-level const does not become a window property in browsers.
+if (typeof window !== 'undefined') {
+  window.InteractiveWorld = InteractiveWorld;
 }
 
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && document.currentScript && document.currentScript.src) {
