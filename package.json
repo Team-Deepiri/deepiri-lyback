@@ -4,8 +4,10 @@
   "description": "Revolutionary interactive backgrounds that run everywhere",
   "main": "src/interactive-background/index.js",
   "scripts": {
-    "start": "npx serve .",
+    "start": "electron electron/main.js",
+    "serve": "npx serve .",
     "dev": "npx serve tools/wallpaper-studio",
+    "cavesweat": "npm start --prefix cavesweat",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/ tools/",
@@ -24,12 +26,26 @@
   ],
   "author": "Deepiri",
   "license": "Apache-2.0",
+  "build": {
+    "appId": "com.deepiri.lyback",
+    "productName": "Deepiri Lyback",
+    "files": ["electron/**", "src/**", "tools/**", "assets/**", "package.json"],
+    "fileAssociations": [
+      {
+        "ext": "lyv",
+        "name": "Lyvector World",
+        "description": "Deepiri interactive world",
+        "role": "Editor"
+      }
+    ]
+  },
   "homepage": "https://github.com/deepiri/livegrounds#readme",
   "bugs": {
     "url": "https://github.com/Team-Deepiri/deepiri-lyback/issues"
   },
   "dependencies": {},
   "devDependencies": {
+    "electron": "^31.0.0",
     "eslint": "^9.0.0",
     "serve": "^14.2.0",
     "vitest": "^3.0.0"

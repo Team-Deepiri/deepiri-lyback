@@ -1,3 +1,5 @@
+/* global InteractiveWorld */
+
 const WallpaperBundler = (() => {
   function createWindowsWallpaper(canvas, config, engineCode) {
     const wallpaper = {
@@ -64,6 +66,37 @@ HTMLWallpaper=wallpaper.html
 
   function generateWallpaperHTML(config) {
     const c = config || {};
+    const mode = c.mode || 'particles';
+    if (mode === 'world') {
+      return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deepiri Interactive World Wallpaper</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #0a0a1a;
+    }
+    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+    #info {
+      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.3); font: 12px monospace; z-index: 1;
+      pointer-events: none; text-align: center;
+    }
+  </style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="info">WASD/Arrows: Move | Space: Jump | E/Click: Interact</div>
+<script>
+${getEmbeddedEngine(c)}
+</script>
+</body>
+</html>`;
+    }
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -91,6 +124,33 @@ ${getEmbeddedEngine(c)}
 
   function getEmbeddedEngine(config) {
     const c = config || {};
+    const mode = c.mode || 'particles';
+
+    if (mode === 'world') {
+      let worldSource = '';
+      if (typeof InteractiveWorld !== 'undefined') {
+        worldSource = InteractiveWorld.__source__ || InteractiveWorld.toString();
+      }
+      if (!worldSource || worldSource === '[object Object]') {
+        try { worldSource = InteractiveWorld.WorldEngine.toString(); } catch(e) {}
+      }
+      const defaults = {
+        WORLD_WIDTH: c.worldWidth || 5000,
+        WORLD_PLATFORM_COUNT: c.platformCount || 10,
+        WORLD_PORTAL_COUNT: c.portalCount || 6,
+        WORLD_PARTICLE_COUNT: c.particleCount || 60,
+        WORLD_CREATURE_COUNT: c.creatureCount || 15,
+        WORLD_CHEST_COUNT: c.chestCount || 5,
+        WORLD_CRYSTAL_COUNT: c.crystalCount || 8,
+        DEFAULT_COLORS: c.colors || ['#ff6b6b','#4ecdc4','#45b7d1','#96ceb4','#ffeaa7','#dfe6e9']
+      };
+      return `const DEEPIRI_DEFAULTS = ${JSON.stringify(defaults)};
+${worldSource}
+const canvas = document.getElementById('bg');
+const engine = new InteractiveWorld.WorldEngine(canvas, { interactive: true });
+engine.start();`;
+    }
+
     return `const canvas=document.getElementById('bg'),ctx=canvas.getContext('2d');
 const C={p:${c.particleCount||200},c:${JSON.stringify(c.colors||['#ff6b6b','#4ecdc4','#45b7d1','#96ceb4','#ffeaa7','#dfe6e9'])},b:'${c.bgColor||'#0d0d14'}',s:${c.speed||3},z:${c.particleSize||6}};
 class P{constructor(){this.r()}r(x,y){this.x=x??Math.random()*w,this.y=y??Math.random()*h,this.vx=(Math.random()-.5)*C.s,this.vy=(Math.random()-.5)*C.s,this.size=Math.random()*C.z+C.z/2,this.color=C.c[Math.floor(Math.random()*C.c.length)],this.l=1,this.d=Math.random()*.008+.003}u(){this.x+=this.vx,this.y+=this.vy,this.l-=this.d,this.x<0||this.x>w||this.y<0||this.y>h||this.l<=0?this.r():0}d(){ctx.globalAlpha=this.l,ctx.fillStyle=this.color,ctx.beginPath(),ctx.arc(this.x,this.y,this.size*this.l,0,6.28),ctx.fill(),ctx.globalAlpha=1}}
@@ -101,9 +161,14 @@ let p=[],mx=0,my=0,w,h;function rz(){w=canvas.width=window.innerWidth,h=canvas.h
     return code.replace(/\s+/g, ' ').replace(/; /g, ';').replace(/} /g, '}').replace(/ {/g, '{');
   }
 
-  function getReadmeContent(_config) {
+  function getReadmeContent(config) {
+    const mode = (config && config.mode) || 'particles';
+    const interaction = mode === 'world'
+      ? '- WASD/Arrow keys to walk through the world\n- Space to jump (double jump enabled)\n- Approach glowing portals and press E or click to interact'
+      : '- Move mouse to interact with particles\n- Click to spawn particle bursts';
     return `DEEPIRI INTERACTIVE WALLPAPER
 ===============================
+Mode: ${mode}
 Created: ${new Date().toISOString().split('T')[0]}
 
 HOW TO USE:
@@ -112,8 +177,7 @@ HOW TO USE:
 3. Set browser as your desktop wallpaper
 
 INTERACTION:
-- Move mouse to interact with particles
-- Click to spawn particle bursts
+${interaction}
 
 Created with Deepiri Lyback
 https://github.com/deepiri/lyback

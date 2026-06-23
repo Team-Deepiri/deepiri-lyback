@@ -1,3 +1,5 @@
+/* global InteractiveWorld, InteractiveEngine */
+
 const InteractivePlayer = (() => {
   const MAGIC = 'IBG1';
 
@@ -147,10 +149,19 @@ const InteractivePlayer = (() => {
         this.engine.stop();
       }
 
-      this.engine = new InteractiveEngine.Engine(this.canvas, {
-        mode: config.mode || 'particles',
-        interactive: config.interactive !== false
-      });
+      const mode = config.mode || 'particles';
+
+      if (mode === 'world' && typeof InteractiveWorld !== 'undefined') {
+        this.engine = new InteractiveWorld.WorldEngine(this.canvas, {
+          mode: mode,
+          interactive: config.interactive !== false
+        });
+      } else {
+        this.engine = new InteractiveEngine.Engine(this.canvas, {
+          mode: mode,
+          interactive: config.interactive !== false
+        });
+      }
       this.engine.start();
 
       return this.engine;

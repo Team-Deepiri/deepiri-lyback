@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deepiri Lyvector Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #07070d; }
+    #bg { position: fixed; inset: 0; width: 100%; height: 100%; }
+    #drop {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; color: #e8e8f0; font-family: system-ui, sans-serif; text-align: center;
+      background: radial-gradient(ellipse at center, #0d0d14 0%, #07070d 100%);
+      transition: opacity 0.3s; cursor: pointer;
+    }
+    #drop.hide { opacity: 0; pointer-events: none; }
+    #drop.over .box { border-color: #4ecdc4; background: rgba(78,205,196,0.08); }
+    .box {
+      border: 2px dashed rgba(78,205,196,0.4); border-radius: 16px;
+      padding: 48px 64px; transition: all 0.2s;
+    }
+    .box h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 6px; }
+    .box h1 span { color: #4ecdc4; }
+    .box p { color: rgba(255,255,255,0.45); font-size: 0.9rem; }
+    .box .big { font-size: 2.2rem; margin-bottom: 10px; }
+    #info {
+      position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.3); font: 12px monospace; z-index: 5; pointer-events: none;
+    }
+    #err { color: #ff8b8b; font-size: 0.85rem; min-height: 1em; }
+  </style>
+</head>
+<body>
+  <canvas id="bg"></canvas>
+  <div id="drop">
+    <div class="box">
+      <div class="big">🌍</div>
+      <h1><span>Deepiri</span> Lyvector Viewer</h1>
+      <p>Drop a <strong>.lyv</strong> file here (or click to pick one) to run it.</p>
+      <p style="margin-top:6px;font-size:0.78rem">A .lyv is a living world packed inside a normal image.</p>
+      <div id="err"></div>
+    </div>
+    <input type="file" id="picker" accept="image/*,.lyv" hidden>
+  </div>
+  <div id="info">WASD/Arrows: Move &nbsp;|&nbsp; Space: Jump &nbsp;|&nbsp; E/Click: Interact</div>
+
+  <script src="../../src/interactive-background/lyvector.js"></script>
+  <script>
+    const dropEl = document.getElementById('drop');
+    const picker = document.getElementById('picker');
+    const errEl = document.getElementById('err');
+    let engine = null;
+
+    function sceneToDefaults(s) {
+      return {
+        WORLD_WIDTH: s.worldWidth || 5000,
+        WORLD_PLATFORM_COUNT: s.platformCount || 10,
+        WORLD_PORTAL_COUNT: s.portalCount || 6,
+        WORLD_PARTICLE_COUNT: s.particleCount || 60,
+        WORLD_CREATURE_COUNT: s.creatureCount || 15,
+        WORLD_CHEST_COUNT: s.chestCount || 5,
+        WORLD_CRYSTAL_COUNT: s.crystalCount || 8,
+        WORLD_SKY_TOP: s.skyTop || '#0a0a1a',
+        WORLD_SKY_BOTTOM: s.skyBottom || '#1a2a3e',
+        WORLD_GROUND_TOP: s.groundTop || '#3a7d5a',
+        WORLD_GROUND_BOTTOM: s.groundBottom || '#1a0a0a',
+        WORLD_PLAYER_COLOR: s.playerColor || '#4ecdc4',
+        DEFAULT_COLORS: s.colors || ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
+      };
+    }
+
+    function loadEngineThen(cb) {
+      // The world engine reads DEEPIRI_DEFAULTS at evaluation time, so defaults
+      // must already be set before this script loads.
+      if (window.InteractiveWorld) { cb(); return; }
+      const s = document.createElement('script');
+      s.src = '../../src/interactive-background/world-engine.js';
+      s.onload = cb;
+      s.onerror = () => { errEl.textContent = 'Could not load the world engine.'; };
+      document.head.appendChild(s);
+    }
+
+    function runScene(scene, embeddedEngine) {
+      window.DEEPIRI_DEFAULTS = sceneToDefaults(scene);
+      const start = () => {
+        if (engine && engine.stop) engine.stop();
+        const canvas = document.getElementById('bg');
+        engine = new window.InteractiveWorld.WorldEngine(canvas, { interactive: true });
+        if (engine.applyWorldConfig) {
+          engine.applyWorldConfig({
+            biome: scene.biome, weather: scene.weather, timeOfDay: scene.timeOfDay,
+            skyTop: scene.skyTop, skyBottom: scene.skyBottom,
+            groundTop: scene.groundTop, groundBottom: scene.groundBottom,
+            playerColor: scene.playerColor
+          });
+        }
+        engine.start();
+        dropEl.classList.add('hide');
+      };
+      if (embeddedEngine && !window.InteractiveWorld) {
+        // Self-contained .lyv: run the engine baked into the file.
+        const s = document.createElement('script');
+        s.textContent = embeddedEngine;
+        document.head.appendChild(s);
+        start();
+      } else {
+        loadEngineThen(start);
+      }
+    }
+
+    function runBytes(bytes) {
+      const lyv = Lyvector.decode(bytes);
+      if (!lyv || !lyv.scene) {
+        errEl.textContent = 'That file has no Lyvector world inside it.';
+        return false;
+      }
+      runScene(lyv.scene, lyv.engine);
+      return true;
+    }
+
+    async function handleFile(file) {
+      errEl.textContent = '';
+      try {
+        runBytes(new Uint8Array(await file.arrayBuffer()));
+      } catch (e) {
+        errEl.textContent = 'Failed to read that file.';
+      }
+    }
+
+    function b64ToBytes(b64) {
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+
+    // If launched via double-click / file association in the desktop app, the
+    // .lyv is waiting for us through the native bridge — run it immediately.
+    if (window.deepiriNative && window.deepiriNative.getLaunchFile) {
+      window.deepiriNative.getLaunchFile().then((f) => {
+        if (f && f.data) runBytes(b64ToBytes(f.data));
+      }).catch(() => { /* ignore — fall back to drop UI */ });
+    }
+
+    dropEl.addEventListener('click', () => picker.click());
+    picker.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+    dropEl.addEventListener('dragover', (e) => { e.preventDefault(); dropEl.classList.add('over'); });
+    dropEl.addEventListener('dragleave', () => dropEl.classList.remove('over'));
+    dropEl.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropEl.classList.remove('over');
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+    // Allow dropping anywhere once a world is running, to swap files.
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+  </script>
+</body>
+</html>

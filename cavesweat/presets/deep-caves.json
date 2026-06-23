@@ -1,0 +1,42 @@
+{
+  "name": "Deep Caves",
+  "description": "A massive underground with more entrances, tighter tunnels, and brutal lava depth.",
+  "world": {
+    "width": 8000,
+    "height": 2200,
+    "surfaceBase": 400
+  },
+  "physics": {
+    "gravity": 0.6,
+    "jumpForce": -12,
+    "moveSpeed": 4
+  },
+  "entities": {
+    "platforms": 8,
+    "portals": 4,
+    "creatures": 25,
+    "chests": 10,
+    "crystals": 14,
+    "particles": 80
+  },
+  "caves": {
+    "enabled": true,
+    "entrances": 8,
+    "tunnelRadius": 24,
+    "sealedPockets": 12,
+    "lavaOffset": 100
+  },
+  "visuals": {
+    "skyTop": "#050510",
+    "skyBottom": "#101828",
+    "groundTop": "#2d5a4a",
+    "groundBottom": "#120808",
+    "playerColor": "#ff6b6b",
+    "palette": ["#ff6b6b", "#e056a0", "#6c5ce7", "#45b7d1", "#ffeaa7", "#dfe6e9"]
+  },
+  "environment": {
+    "biome": "auto",
+    "weather": "auto",
+    "timeOfDay": 0.15
+  }
+}
