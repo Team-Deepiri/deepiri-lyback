@@ -4,7 +4,7 @@
   "description": "Revolutionary interactive backgrounds that run everywhere",
   "main": "src/interactive-background/index.js",
   "scripts": {
-    "start": "electron electron/main.js",
+    "start": "electron --no-sandbox electron/main.js",
     "serve": "npx serve .",
     "dev": "npx serve tools/wallpaper-studio",
     "cavesweat": "npm start --prefix cavesweat",
